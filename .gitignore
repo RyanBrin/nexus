@@ -1,0 +1,27 @@
+# Android
+android/.gradle/
+android/build/
+android/.idea/
+android/.kotlin/
+android/local.properties
+android/**/.venv/
+
+# Python
+trading-bot/.venv/
+trading-bot/__pycache__/
+trading-bot/*.pyc
+trading-bot/.env
+api/.venv/
+api/__pycache__/
+api/*.pyc
+api/.env
+
+# State files
+trading-bot/state/trades.jsonl
+trading-bot/state/hypotheses.jsonl
+trading-bot/state/history/
+trading-bot/state/heartbeat.json
+
+# Keys
+**/.env
+**/local.properties
