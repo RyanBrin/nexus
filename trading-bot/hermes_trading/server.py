@@ -210,7 +210,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
       <span class="card-meta" id="trade-meta"></span>
     </div>
     <div class="table-wrap" id="trade-table">
-      <div class="empty"><strong>No closed trades yet</strong>Waiting for RSI &lt; 30 entry signal on BTC/USDT</div>
+      <div class="empty" id="empty-state"><strong>No closed trades yet</strong>Waiting for entry signal on BTC/USDT</div>
     </div>
   </div>
 
@@ -314,7 +314,21 @@ function render(status, trades) {
   const tableDiv = document.getElementById('trade-table');
   document.getElementById('trade-meta').textContent = closed.length ? `${closed.length} closed · showing all` : '';
   if (closed.length === 0 && !ot) {
-    tableDiv.innerHTML = '<div class="empty"><strong>No closed trades yet</strong>Waiting for RSI &lt; 30 entry signal on BTC/USDT</div>';
+    // Parse threshold from strategy YAML
+    let threshold = 35, stopLoss = 1.0, exitThreshold = 55, tf = '15m';
+    if (status.strategy) {
+      const thMatch = status.strategy.match(/threshold:\\s*(\\d+)/);
+      const slMatch = status.strategy.match(/stop_loss_pct:\\s*([\\d.]+)/);
+      const exMatch = status.strategy.match(/exit_rsi_threshold:\\s*(\\d+)/);
+      const tfMatch = status.strategy.match(/timeframe:\\s*(\\S+)/);
+      if (thMatch) threshold = thMatch[1];
+      if (slMatch) stopLoss = slMatch[1];
+      if (exMatch) exitThreshold = exMatch[1];
+      if (tfMatch) tf = tfMatch[1];
+    }
+    const emptyEl = document.getElementById('empty-state');
+    if (emptyEl) emptyEl.innerHTML = `<strong>No closed trades yet</strong>Waiting for ${tf} RSI &lt; ${threshold} entry · take-profit RSI &gt; ${exitThreshold} · stop loss ${stopLoss}%`;
+    tableDiv.innerHTML = `<div class="empty" id="empty-state"><strong>No closed trades yet</strong>Waiting for ${tf} RSI &lt; ${threshold} entry · take-profit RSI &gt; ${exitThreshold} · stop loss ${stopLoss}%</div>`;
   } else {
     const allRows = [...closed].reverse();
     // Add open trade as first row if exists
