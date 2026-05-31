@@ -25,7 +25,7 @@ private val bestBuyColor = Color(0xFF1565C0)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShiftsScreen(vm: ShiftsViewModel = viewModel()) {
+fun ShiftsScreen(vm: ShiftsViewModel = viewModel(), embedded: Boolean = false) {
     val shifts by vm.shifts.collectAsStateWithLifecycle()
     val now = System.currentTimeMillis()
 
@@ -60,7 +60,7 @@ fun ShiftsScreen(vm: ShiftsViewModel = viewModel()) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Work Shifts") }) },
+        topBar = if (embedded) ({ }) else ({ TopAppBar(title = { Text("Work Shifts") }) }),
         floatingActionButton = {
             FloatingActionButton(onClick = { editing = null; showDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Add shift")

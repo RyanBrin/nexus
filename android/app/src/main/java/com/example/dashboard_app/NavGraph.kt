@@ -6,7 +6,6 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Paid
 import androidx.compose.material.icons.filled.ShowChart
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -24,15 +23,14 @@ import com.example.dashboard_app.ui.budget.BudgetScreen
 import com.example.dashboard_app.ui.calendar.CalendarScreen
 import com.example.dashboard_app.ui.home.HomeScreen
 import com.example.dashboard_app.ui.settings.SettingsScreen
-import com.example.dashboard_app.ui.shifts.ShiftsScreen
 import com.example.dashboard_app.ui.stocks.StocksScreen
 import com.example.dashboard_app.ui.trading.TradingScreen
 
 enum class Dest(val route: String, val label: String, val icon: ImageVector) {
     Home("home", "Home", Icons.Default.Home),
-    Calendar("calendar", "Calendar", Icons.Default.CalendarMonth),
+    Calendar("calendar", "Schedule", Icons.Default.CalendarMonth),
     Budget("budget", "Budget", Icons.Default.Paid),
-    Shifts("shifts", "Shifts", Icons.Default.Work),
+    Stocks("stocks", "Stocks", Icons.AutoMirrored.Filled.ShowChart),
     Trading("trading", "Trading", Icons.Default.ShowChart)
 }
 
@@ -64,9 +62,8 @@ fun DashboardNavHost(navController: NavHostController) {
         composable(Dest.Home.route) { HomeScreen(navController = navController) }
         composable(Dest.Calendar.route) { CalendarScreen() }
         composable(Dest.Budget.route) { BudgetScreen() }
-        composable(Dest.Shifts.route) { ShiftsScreen() }
+        composable(Dest.Stocks.route) { StocksScreen() }
         composable(Dest.Trading.route) { TradingScreen() }
-        composable("stocks") { StocksScreen() }
         composable("settings") { SettingsScreen() }
     }
 }
