@@ -89,14 +89,16 @@ def _compute_rsi(closes: list[float], period: int = 14) -> float | None:
 def _should_enter(strategy: dict, market: dict) -> bool:
     entry = strategy.get("entry", {})
     indicator = entry.get("indicator", "rsi")
-    threshold = entry.get("threshold", 30)
+    threshold = entry.get("threshold", 35)
     direction = entry.get("direction", "long")
 
     if indicator == "rsi":
-        closes = market.get("closes_1h", [])
+        # Use 15m closes if available, fall back to 1h
+        closes = market.get("closes_15m") or market.get("closes_1h", [])
         rsi = _compute_rsi(closes)
         if rsi is None:
             return False
+        log.debug(f"RSI: {rsi:.1f} threshold: {threshold}")
         if direction == "long":
             return rsi < threshold
         else:
@@ -104,9 +106,27 @@ def _should_enter(strategy: dict, market: dict) -> bool:
     return False
 
 
+def _should_exit_profit(strategy: dict, market: dict) -> bool:
+    """Take profit when RSI recovers above exit_threshold."""
+    exit_threshold = strategy.get("exit_rsi_threshold", 55)
+    closes = market.get("closes_15m") or market.get("closes_1h", [])
+    rsi = _compute_rsi(closes)
+    if rsi is None:
+        return False
+    return rsi > exit_threshold
+
+
 async def run_loop(asset: str) -> None:
     consecutive_failures = 0
-    open_trade: dict | None = None
+
+    # Restore any trade that was open before the last restart
+    try:
+        hb = await db.read_heartbeat()
+        open_trade: dict | None = hb.get("open_trade")
+        if open_trade:
+            log.info(f"Restored open trade from heartbeat: {open_trade.get('asset')} @ {open_trade.get('entry_price')}")
+    except Exception:
+        open_trade = None
 
     log.info(f"Booting hermes-trading worker — asset={asset} mode={os.getenv('HERMES_TRADING_MODE', 'paper')}")
 
@@ -131,7 +151,7 @@ async def run_loop(asset: str) -> None:
             # Manage open trade
             if open_trade is not None:
                 entry_price = open_trade["entry_price"]
-                stop_loss_pct = strategy.get("stop_loss_pct", 2.0) / 100
+                stop_loss_pct = strategy.get("stop_loss_pct", 1.0) / 100
                 pnl_pct = (current_price - entry_price) / entry_price
 
                 if pnl_pct <= -stop_loss_pct:
@@ -142,8 +162,16 @@ async def run_loop(asset: str) -> None:
                     await _append_trade(open_trade)
                     log.info(f"Trade closed (stop loss): pnl={pnl_pct:.4f}")
                     open_trade = None
+                elif _should_exit_profit(strategy, market):
+                    open_trade["exit_price"] = current_price
+                    open_trade["pnl_pct"] = pnl_pct
+                    open_trade["exit_ts"] = tick_start.isoformat()
+                    open_trade["exit_reason"] = "take_profit"
+                    await _append_trade(open_trade)
+                    log.info(f"Trade closed (take profit): pnl={pnl_pct:.4f}")
+                    open_trade = None
                 else:
-                    log.debug(f"Open trade pnl={pnl_pct:.4f}")
+                    log.info(f"Open trade pnl={pnl_pct:.4f}")
 
             # Check TradingView signal first (overrides RSI logic if present)
             tv = _consume_tv_signal()

@@ -27,11 +27,11 @@ async def fetch(asset: str = "BTC/USDT") -> dict:
     try:
         await exchange.load_markets()
         ticker = await exchange.fetch_ticker(kraken_asset)
-        ohlcv = await exchange.fetch_ohlcv(kraken_asset, timeframe="1h", limit=50)
+        ohlcv_1h  = await exchange.fetch_ohlcv(kraken_asset, timeframe="1h",  limit=50)
+        ohlcv_15m = await exchange.fetch_ohlcv(kraken_asset, timeframe="15m", limit=60)
     finally:
         await exchange.close()
 
-    closes = [c[4] for c in ohlcv]
     result = {
         "schema_version": SCHEMA_VERSION,
         "asset": asset,
@@ -39,7 +39,8 @@ async def fetch(asset: str = "BTC/USDT") -> dict:
         "bid": ticker["bid"],
         "ask": ticker["ask"],
         "volume_24h": ticker["quoteVolume"],
-        "closes_1h": closes,
+        "closes_1h":  [c[4] for c in ohlcv_1h],
+        "closes_15m": [c[4] for c in ohlcv_15m],
     }
 
     if result.get("schema_version") != SCHEMA_VERSION:
