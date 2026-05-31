@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from hermes_trading import db
 
 STATE = Path(os.getenv("STATE_DIR", Path(__file__).parent.parent / "state"))
-app = FastAPI(title="hermes-trading", docs_url=None, redoc_url=None)
+app = FastAPI(title="Nexus Trading", docs_url=None, redoc_url=None)
 
 
 def _load_yaml_raw(path: Path) -> str:
@@ -158,7 +158,7 @@ async def dashboard():
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="refresh" content="10">
-  <title>hermes-trading</title>
+  <title>Nexus · Trading</title>
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     body {{
@@ -344,7 +344,7 @@ async def dashboard():
 
   <div class="header">
     <div class="header-left">
-      <h1><span class="dot"></span>hermes-trading</h1>
+      <h1><span class="dot"></span>Nexus <span style="color:#475569;font-weight:400;font-size:0.9rem">/ trading</span></h1>
       <div class="sub">BTC/USDT · refreshes every 10s · last tick: {_fmt_ts(last_tick)}</div>
     </div>
     <div class="mode-badge">paper mode</div>
@@ -434,7 +434,7 @@ async def dashboard():
         const y = h - pad - ((v - min) / range) * (h - pad * 2);
         i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
       }});
-      ctx.strokeStyle = '#3b82f6';
+      ctx.strokeStyle = '#0AAAFF';
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
