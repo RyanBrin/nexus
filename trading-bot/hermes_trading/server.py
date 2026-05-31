@@ -24,7 +24,7 @@ def _load_yaml_raw(path: Path) -> str:
 
 
 def _fmt_price(v) -> str:
-    return f"${v:,.0f}" if isinstance(v, (int, float)) else "—"
+    return f"${v:,.2f}" if isinstance(v, (int, float)) else "—"
 
 
 def _fmt_pct(v) -> str:
@@ -228,7 +228,7 @@ _DASHBOARD_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
-const fmt = (n) => n == null ? '—' : '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+const fmt = (n) => n == null ? '—' : '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 const fmtPct = (n) => n == null ? '—' : (n >= 0 ? '+' : '') + (n * 100).toFixed(3) + '%';
 const fmtTs = (s) => s ? s.slice(0,16).replace('T',' ') : '—';
 
@@ -445,9 +445,9 @@ function drawChart(closed) {
   ctx.fill();
 }
 
-// Refresh every 10s
+// Refresh every 5s
 fetchAll();
-setInterval(fetchAll, 10000);
+setInterval(fetchAll, 5000);
 </script>
 </body>
 </html>"""
