@@ -54,16 +54,16 @@ class EventReminderWorker(ctx: Context, params: WorkerParameters) : CoroutineWor
     private fun ensureChannel(nm: NotificationManager) {
         if (nm.getNotificationChannel(CHANNEL_ID) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Upcoming event and shift reminders"
+                NotificationChannel(CHANNEL_ID, "Nexus Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = "Upcoming event and shift reminders from Nexus"
                 }
             )
         }
     }
 
     companion object {
-        const val CHANNEL_ID = "dashboard_reminders"
-        private const val WORK_NAME = "event_reminder"
+        const val CHANNEL_ID = "nexus_reminders"
+        private const val WORK_NAME = "nexus_event_reminder"
 
         fun schedule(context: Context) {
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(

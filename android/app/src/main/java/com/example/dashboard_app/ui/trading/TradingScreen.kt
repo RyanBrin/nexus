@@ -145,7 +145,7 @@ fun TradingScreen(vm: TradingViewModel = viewModel()) {
                         Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("No trades yet", fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(4.dp))
-                            Text("Waiting for RSI < 30 entry signal on BTC/USDT", fontSize = 13.sp, color = Color(0xFF64748B))
+                            Text("Waiting for 15m RSI < 35 entry · take-profit RSI > 55 · stop loss 1%", fontSize = 13.sp, color = Color(0xFF64748B))
                         }
                     }
                 }

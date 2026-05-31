@@ -16,7 +16,7 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 
 const val PREF_ALPHA_VANTAGE_KEY = "alpha_vantage_key"
-private const val PREF_FILE = "dashboard_secure_prefs"
+private const val PREF_FILE = "nexus_secure_prefs"
 
 fun getSecurePrefs(context: Context) = EncryptedSharedPreferences.create(
     context,
