@@ -23,6 +23,7 @@ data class HermesControlState(
     val approvalRatePct: Double = 0.0,
     val recentIdeas: List<HermesTradeIdea> = emptyList(),
     val riskRules: Map<String, Any?> = emptyMap(),
+    val watchlist: List<Map<String, Any?>> = emptyList(),
     val errors: List<Map<String, Any?>> = emptyList(),
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -39,34 +40,69 @@ class HermesControlViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, error = null)
             try {
-                val status = service.getStatus()
-                val ideas = service.getTradeIdeas(limit = 20)
-                val stats = service.getIdeaStats()
-                val rules = service.getRiskRules()
+                val status   = service.getStatus()
+                val ideas    = service.getTradeIdeas(limit = 20)
+                val stats    = service.getIdeaStats()
+                val rules    = service.getRiskRules()
+                val watchlist = service.getWatchlist()
 
                 val s = status.status
                 @Suppress("UNCHECKED_CAST")
                 val errs = (s["errors"] as? List<Map<String, Any?>>).orEmpty()
 
                 _state.value = HermesControlState(
-                    isRunning = s["running"] as? Boolean ?: false,
-                    mode = s["mode"] as? String ?: "paper_trading",
-                    btcLoopRunning = s["btc_loop_running"] as? Boolean ?: false,
+                    isRunning        = s["running"] as? Boolean ?: false,
+                    mode             = s["mode"] as? String ?: "paper_trading",
+                    btcLoopRunning   = s["btc_loop_running"] as? Boolean ?: false,
                     stockLoopRunning = s["stock_loop_running"] as? Boolean ?: false,
-                    lastBtcTick = s["last_btc_tick"] as? String,
-                    lastStockScan = s["last_stock_scan"] as? String,
-                    activeStrategy = s["active_strategy"] as? String ?: "v01",
-                    totalIdeas = stats.total_ideas,
-                    approved = stats.approved,
-                    rejected = stats.rejected,
-                    approvalRatePct = stats.approval_rate_pct,
-                    recentIdeas = ideas,
-                    riskRules = rules,
-                    errors = errs.takeLast(5),
-                    isLoading = false,
+                    lastBtcTick      = s["last_btc_tick"] as? String,
+                    lastStockScan    = s["last_stock_scan"] as? String,
+                    activeStrategy   = s["active_strategy"] as? String ?: "v01",
+                    totalIdeas       = stats.total_ideas,
+                    approved         = stats.approved,
+                    rejected         = stats.rejected,
+                    approvalRatePct  = stats.approval_rate_pct,
+                    recentIdeas      = ideas,
+                    riskRules        = rules,
+                    watchlist        = watchlist,
+                    errors           = errs.takeLast(5),
+                    isLoading        = false,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(isLoading = false, error = e.message)
+            }
+        }
+    }
+
+    fun toggleTrading(ticker: String, enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                service.toggleStock(ticker, mapOf("enabled" to enabled))
+                refresh()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = "Toggle failed: ${e.message}")
+            }
+        }
+    }
+
+    fun addStock(ticker: String, companyName: String = "") {
+        viewModelScope.launch {
+            try {
+                service.addStock(mapOf("ticker" to ticker, "company_name" to companyName))
+                refresh()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = "Add failed: ${e.message}")
+            }
+        }
+    }
+
+    fun removeStock(ticker: String) {
+        viewModelScope.launch {
+            try {
+                service.removeStock(ticker)
+                refresh()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(error = "Remove failed: ${e.message}")
             }
         }
     }

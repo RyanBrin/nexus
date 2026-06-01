@@ -30,7 +30,7 @@ private val border      = Color(0xFF1E293B)
 fun HermesControlScreen(vm: HermesControlViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Status", "Trade Ideas", "Risk Rules")
+    val tabs = listOf("Status", "Watchlist", "Trade Ideas", "Risk Rules")
 
     Scaffold(
         topBar = {
@@ -57,8 +57,9 @@ fun HermesControlScreen(vm: HermesControlViewModel = viewModel()) {
             }
             when (selectedTab) {
                 0 -> StatusTab(state)
-                1 -> IdeasTab(state.recentIdeas)
-                2 -> RiskRulesTab(state.riskRules)
+                1 -> WatchlistTab(state, vm)
+                2 -> IdeasTab(state.recentIdeas)
+                3 -> RiskRulesTab(state.riskRules)
             }
         }
     }
@@ -226,6 +227,151 @@ private fun InfoChip(label: String, value: String, valueColor: Color = MaterialT
     Column {
         Text(label, fontSize = 9.sp, color = Color(0xFF475569))
         Text(value, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = valueColor)
+    }
+}
+
+@Composable
+private fun WatchlistTab(state: HermesControlState, vm: HermesControlViewModel) {
+    var newTicker by remember { mutableStateOf("") }
+
+    LazyColumn(
+        Modifier.fillMaxSize().padding(horizontal = 16.dp),
+        contentPadding = PaddingValues(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Add stock row
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = newTicker,
+                    onValueChange = { newTicker = it.uppercase() },
+                    label = { Text("Add ticker") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        if (newTicker.isNotBlank()) {
+                            vm.addStock(newTicker.trim())
+                            newTicker = ""
+                        }
+                    },
+                    enabled = newTicker.isNotBlank()
+                ) { Text("Add") }
+            }
+        }
+
+        if (state.watchlist.isEmpty()) {
+            item {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("No stocks in watchlist", color = Color(0xFF64748B))
+                }
+            }
+        }
+
+        items(state.watchlist, key = { it["ticker"] as? String ?: "" }) { stock ->
+            val ticker        = stock["ticker"] as? String ?: ""
+            val company       = stock["company_name"] as? String ?: ""
+            val price         = stock["current_price"]
+            val change        = stock["daily_change_pct"]
+            val tradingEnabled = stock["trading_enabled"] as? Boolean ?: false
+            val signal        = stock["signal"] as? String ?: ""
+            val confidence    = stock["confidence_score"]
+            val trend         = stock["trend"] as? String ?: ""
+            val position      = stock["position_status"] as? String ?: "watching"
+            val notes         = stock["hermes_notes"] as? String ?: ""
+            val waveCount     = stock["wave_count"] as? String ?: ""
+
+            val borderColor = if (position == "in_trade") green else if (tradingEnabled) nexusBlue else Color(0xFF1E293B)
+
+            ElevatedCard(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.elevatedCardColors(containerColor = Color(0xFF111827))
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    // Header row
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(ticker, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                        Spacer(Modifier.width(6.dp))
+                        if (company.isNotBlank()) Text(company, fontSize = 11.sp, color = Color(0xFF475569), modifier = Modifier.weight(1f))
+                        else Spacer(Modifier.weight(1f))
+                        if (price != null) {
+                            Text("$${"%.2f".format((price as? Double) ?: 0.0)}", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        }
+                        if (change != null) {
+                            val c = (change as? Double) ?: 0.0
+                            Spacer(Modifier.width(6.dp))
+                            Text("${if (c >= 0) "+" else ""}${"%.2f".format(c)}%", fontSize = 12.sp,
+                                color = if (c >= 0) green else red, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    // Signal + confidence row
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (signal.isNotBlank()) {
+                            val sigColor = when {
+                                signal == "entry_confirmed" -> green
+                                signal == "invalidated_setup" -> red
+                                signal.contains("wave") -> amber
+                                else -> Color(0xFF64748B)
+                            }
+                            Surface(color = sigColor.copy(0.15f), shape = MaterialTheme.shapes.extraSmall) {
+                                Text(signal.replace("_", " "), fontSize = 10.sp, color = sigColor,
+                                    fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                        if (confidence != null) {
+                            val conf = ((confidence as? Double) ?: (confidence as? Int)?.toDouble() ?: 0.0).toInt()
+                            Surface(color = Color(0xFF1E293B), shape = MaterialTheme.shapes.extraSmall) {
+                                Text("$conf/100", fontSize = 10.sp, color = Color(0xFF94A3B8),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                            }
+                        }
+                        if (trend.isNotBlank()) {
+                            val tc = if (trend == "bullish") green else if (trend == "bearish") red else Color(0xFF64748B)
+                            Text(trend, fontSize = 10.sp, color = tc, fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.align(Alignment.CenterVertically))
+                        }
+                        Text(position.replace("_", " "), fontSize = 10.sp, color = Color(0xFF475569),
+                            modifier = Modifier.align(Alignment.CenterVertically))
+                    }
+
+                    if (waveCount.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(waveCount, fontSize = 11.sp, color = Color(0xFF64748B))
+                    }
+
+                    if (notes.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("🤖 $notes", fontSize = 11.sp, color = Color(0xFF475569), maxLines = 2)
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+                    HorizontalDivider(color = Color(0xFF1E293B))
+                    Spacer(Modifier.height(8.dp))
+
+                    // Actions row
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Trading", fontSize = 12.sp, color = Color(0xFF94A3B8))
+                            Switch(
+                                checked = tradingEnabled,
+                                onCheckedChange = { vm.toggleTrading(ticker, it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF080F1A), checkedTrackColor = nexusBlue)
+                            )
+                            Text(if (tradingEnabled) "ON" else "OFF", fontSize = 11.sp,
+                                color = if (tradingEnabled) nexusBlue else Color(0xFF475569),
+                                fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(onClick = { vm.removeStock(ticker) }) {
+                            Text("Remove", fontSize = 11.sp, color = red)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

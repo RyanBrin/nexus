@@ -70,22 +70,41 @@ DEFAULT_WATCHLIST: list[StockEntry] = [
 
 
 def load_watchlist() -> list[StockEntry]:
+    """Load from Supabase if available, fall back to local file."""
+    try:
+        import asyncio
+        from hermes_trading.db import load_watchlist_db
+        db_entries = asyncio.run(load_watchlist_db())
+        if db_entries:
+            return [StockEntry.from_dict(d) for d in db_entries]
+    except Exception:
+        pass
+    # Local file fallback
     if not WATCHLIST_FILE.exists():
-        save_watchlist(DEFAULT_WATCHLIST)
+        _save_watchlist_local(DEFAULT_WATCHLIST)
         return list(DEFAULT_WATCHLIST)
     try:
         data = json.loads(WATCHLIST_FILE.read_text(encoding="utf-8"))
-        return [StockEntry.from_dict(d) for d in data]
+        return [StockEntry.from_dict(d) for d in data] if data else list(DEFAULT_WATCHLIST)
     except Exception:
         return list(DEFAULT_WATCHLIST)
 
 
-def save_watchlist(stocks: list[StockEntry]) -> None:
+def _save_watchlist_local(stocks: list[StockEntry]) -> None:
     WATCHLIST_FILE.parent.mkdir(parents=True, exist_ok=True)
-    WATCHLIST_FILE.write_text(
-        json.dumps([s.to_dict() for s in stocks], indent=2),
-        encoding="utf-8"
-    )
+    WATCHLIST_FILE.write_text(json.dumps([s.to_dict() for s in stocks], indent=2), encoding="utf-8")
+
+
+def save_watchlist(stocks: list[StockEntry]) -> None:
+    """Save all entries — Supabase primary, local file fallback."""
+    _save_watchlist_local(stocks)
+    try:
+        import asyncio
+        from hermes_trading.db import save_watchlist_entry
+        for s in stocks:
+            asyncio.run(save_watchlist_entry(s.ticker, s.to_dict()))
+    except Exception:
+        pass
 
 
 def get_stock(ticker: str) -> Optional[StockEntry]:
@@ -93,22 +112,41 @@ def get_stock(ticker: str) -> Optional[StockEntry]:
 
 
 def upsert_stock(stock: StockEntry) -> None:
+    """Upsert a single entry — fast path that only writes the changed entry."""
+    stock.ticker = stock.ticker.upper()
+    # Update local file
     stocks = load_watchlist()
+    found = False
     for i, s in enumerate(stocks):
-        if s.ticker == stock.ticker.upper():
+        if s.ticker == stock.ticker:
             stocks[i] = stock
-            save_watchlist(stocks)
-            return
-    stocks.append(stock)
-    save_watchlist(stocks)
+            found = True
+            break
+    if not found:
+        stocks.append(stock)
+    _save_watchlist_local(stocks)
+    # Async Supabase write
+    try:
+        import asyncio
+        from hermes_trading.db import save_watchlist_entry
+        asyncio.run(save_watchlist_entry(stock.ticker, stock.to_dict()))
+    except Exception:
+        pass
 
 
 def remove_stock(ticker: str) -> bool:
+    ticker = ticker.upper()
     stocks = load_watchlist()
-    new = [s for s in stocks if s.ticker != ticker.upper()]
+    new = [s for s in stocks if s.ticker != ticker]
     if len(new) == len(stocks):
         return False
-    save_watchlist(new)
+    _save_watchlist_local(new)
+    try:
+        import asyncio
+        from hermes_trading.db import delete_watchlist_entry
+        asyncio.run(delete_watchlist_entry(ticker))
+    except Exception:
+        pass
     return True
 
 

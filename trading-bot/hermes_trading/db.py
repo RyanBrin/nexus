@@ -57,6 +57,16 @@ async def _init_schema(pool):
                 data JSONB NOT NULL,
                 updated_at TIMESTAMPTZ DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS stock_watchlist (
+                ticker TEXT PRIMARY KEY,
+                data JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS hermes_settings (
+                id INT PRIMARY KEY DEFAULT 1,
+                data JSONB NOT NULL,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            );
         """)
 
 
@@ -172,3 +182,77 @@ async def load_hypotheses(limit: int = 50) -> list[dict]:
             return []
         lines = [l for l in path.read_text(encoding="utf-8-sig").strip().splitlines() if l.strip()]
         return [json.loads(l) for l in lines[-limit:]]
+
+
+# ── Stock watchlist persistence ───────────────────────────────────────────────
+
+async def save_watchlist_entry(ticker: str, data: dict) -> None:
+    """Upsert a single stock entry to Supabase. Falls back to local JSON."""
+    pool = await _get_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO stock_watchlist (ticker, data, updated_at)
+                   VALUES ($1, $2, NOW())
+                   ON CONFLICT (ticker) DO UPDATE SET data = $2, updated_at = NOW()""",
+                ticker, json.dumps(data)
+            )
+    else:
+        _save_watchlist_local_entry(ticker, data)
+
+
+async def load_watchlist_db() -> list[dict]:
+    """Load all watchlist entries from Supabase."""
+    pool = await _get_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT data FROM stock_watchlist ORDER BY ticker ASC")
+            return [json.loads(r["data"]) for r in rows]
+    return []
+
+
+async def delete_watchlist_entry(ticker: str) -> None:
+    pool = await _get_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM stock_watchlist WHERE ticker = $1", ticker)
+
+
+def _save_watchlist_local_entry(ticker: str, data: dict) -> None:
+    import os
+    from pathlib import Path
+    state = Path(os.getenv("STATE_DIR", Path(__file__).parent.parent / "state"))
+    wl_file = state / "stock_watchlist.json"
+    try:
+        existing = json.loads(wl_file.read_text(encoding="utf-8")) if wl_file.exists() else []
+        updated = [e for e in existing if e.get("ticker") != ticker] + [data]
+        wl_file.write_text(json.dumps(updated, indent=2))
+    except Exception:
+        pass
+
+
+# ── Agent settings persistence ────────────────────────────────────────────────
+
+async def save_settings_db(settings: dict) -> None:
+    pool = await _get_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO hermes_settings (id, data, updated_at) VALUES (1, $1, NOW())
+                   ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()""",
+                json.dumps(settings)
+            )
+    else:
+        import os
+        from pathlib import Path
+        state = Path(os.getenv("STATE_DIR", Path(__file__).parent.parent / "state"))
+        (state / "hermes_settings.json").write_text(json.dumps(settings, indent=2))
+
+
+async def load_settings_db() -> dict:
+    pool = await _get_pool()
+    if pool:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("SELECT data FROM hermes_settings WHERE id = 1")
+            return json.loads(row["data"]) if row else {}
+    return {}

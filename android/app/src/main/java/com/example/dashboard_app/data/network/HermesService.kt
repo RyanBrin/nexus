@@ -66,6 +66,21 @@ interface HermesService {
     @PATCH("hermes/settings")
     suspend fun updateSettings(@Body settings: Map<String, Any>): Map<String, Any?>
 
+    @GET("stocks/watchlist")
+    suspend fun getWatchlist(): List<Map<String, Any?>>
+
+    @POST("stocks/watchlist")
+    suspend fun addStock(@Body body: Map<String, Any>): Map<String, Any?>
+
+    @DELETE("stocks/watchlist/{ticker}")
+    suspend fun removeStock(@Path("ticker") ticker: String): Map<String, Any?>
+
+    @PATCH("stocks/watchlist/{ticker}/toggle")
+    suspend fun toggleStock(
+        @Path("ticker") ticker: String,
+        @Body body: Map<String, Any>
+    ): Map<String, Any?>
+
     companion object {
         val instance: HermesService by lazy {
             Retrofit.Builder()

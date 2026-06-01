@@ -52,6 +52,16 @@ DEFAULT_SETTINGS = {
 
 
 def load_settings() -> dict:
+    # Try Supabase first
+    try:
+        import asyncio
+        from hermes_trading.db import load_settings_db
+        db_settings = asyncio.run(load_settings_db())
+        if db_settings:
+            return {**DEFAULT_SETTINGS, **db_settings}
+    except Exception:
+        pass
+    # Local file fallback
     if not SETTINGS_FILE.exists():
         save_settings(DEFAULT_SETTINGS)
         return dict(DEFAULT_SETTINGS)
@@ -64,7 +74,15 @@ def load_settings() -> dict:
 def save_settings(settings: dict) -> None:
     STATE.mkdir(parents=True, exist_ok=True)
     settings["last_updated"] = datetime.now(timezone.utc).isoformat()
+    # Write local file
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+    # Persist to Supabase
+    try:
+        import asyncio
+        from hermes_trading.db import save_settings_db
+        asyncio.run(save_settings_db(settings))
+    except Exception:
+        pass
 
 
 def update_setting(key: str, value) -> None:
