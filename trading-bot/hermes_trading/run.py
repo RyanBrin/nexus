@@ -25,8 +25,10 @@ async def _run_server():
 
 async def _main(asset: str):
     from hermes_trading.loop import run_loop
+    from hermes_trading.stocks.loop import run_stock_loop
     await asyncio.gather(
         run_loop(asset),
+        run_stock_loop(),
         _run_server(),
     )
 
