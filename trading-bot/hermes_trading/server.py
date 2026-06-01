@@ -1050,21 +1050,39 @@ async function addStock() {
   const ticker = document.getElementById('new-ticker').value.trim().toUpperCase();
   const name = document.getElementById('new-name').value.trim();
   if (!ticker) return;
-  await fetch('/stocks/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ticker, company_name: name})});
-  document.getElementById('new-ticker').value = '';
-  document.getElementById('new-name').value = '';
-  fetchStocks();
+  const btn = document.querySelector('.add-stock-form button');
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+  try {
+    const r = await fetch('/stocks/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ticker, company_name: name})});
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.detail || 'Failed');
+    document.getElementById('new-ticker').value = '';
+    document.getElementById('new-name').value = '';
+    await fetchStocks();
+  } catch(e) {
+    alert('Could not add ' + ticker + ': ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '+ Add'; }
+  }
 }
 
 async function removeStock(ticker) {
   if (!confirm(`Remove ${ticker} from watchlist?`)) return;
   await fetch('/stocks/watchlist/' + ticker, {method:'DELETE'});
-  fetchStocks();
+  await fetchStocks();
 }
 
 async function toggleStock(ticker, enabled) {
-  await fetch('/stocks/watchlist/' + ticker + '/toggle', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled})});
-  fetchStocks();
+  // Optimistic UI update first so toggle feels instant
+  stockData = stockData.map(s => s.ticker === ticker ? {...s, trading_enabled: enabled} : s);
+  renderStocks();
+  try {
+    await fetch('/stocks/watchlist/' + ticker + '/toggle', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled})});
+    await fetchStocks(); // sync with server state
+  } catch(e) {
+    // Revert on failure
+    await fetchStocks();
+  }
 }
 
 function renderOverviewStocks() {

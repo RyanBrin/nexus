@@ -75,11 +75,17 @@ class HermesControlViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleTrading(ticker: String, enabled: Boolean) {
+        // Optimistic update — flip the switch immediately in UI
+        val updated = _state.value.watchlist.map { s ->
+            if (s["ticker"] == ticker) s.toMutableMap().also { it["trading_enabled"] = enabled } else s
+        }
+        _state.value = _state.value.copy(watchlist = updated)
         viewModelScope.launch {
             try {
-                service.toggleStock(ticker, mapOf("enabled" to enabled))
-                refresh()
+                service.toggleStock(ticker, com.example.dashboard_app.data.network.ToggleRequest(enabled))
+                refresh() // sync confirmed state from server
             } catch (e: Exception) {
+                refresh() // revert on failure
                 _state.value = _state.value.copy(error = "Toggle failed: ${e.message}")
             }
         }
@@ -88,7 +94,7 @@ class HermesControlViewModel(app: Application) : AndroidViewModel(app) {
     fun addStock(ticker: String, companyName: String = "") {
         viewModelScope.launch {
             try {
-                service.addStock(mapOf("ticker" to ticker, "company_name" to companyName))
+                service.addStock(com.example.dashboard_app.data.network.AddStockRequest(ticker.trim().uppercase(), companyName))
                 refresh()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = "Add failed: ${e.message}")

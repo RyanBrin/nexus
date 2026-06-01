@@ -284,7 +284,12 @@ private fun WatchlistTab(state: HermesControlState, vm: HermesControlViewModel) 
             val company       = stock["company_name"] as? String ?: ""
             val price         = stock["current_price"]
             val change        = stock["daily_change_pct"]
-            val tradingEnabled = stock["trading_enabled"] as? Boolean ?: false
+            // Gson can parse JSON booleans as Boolean or occasionally as String — handle both
+            val tradingEnabled = when (val v = stock["trading_enabled"]) {
+                is Boolean -> v
+                is String  -> v.equals("true", ignoreCase = true)
+                else       -> false
+            }
             val signal        = stock["signal"] as? String ?: ""
             val confidence    = stock["confidence_score"]
             val trend         = stock["trend"] as? String ?: ""

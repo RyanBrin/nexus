@@ -6,6 +6,9 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.*
 
+data class ToggleRequest(val enabled: Boolean)
+data class AddStockRequest(val ticker: String, val company_name: String = "")
+
 data class HermesStatusResponse(
     val status: Map<String, Any?>,
     val settings: Map<String, Any?>,
@@ -70,7 +73,7 @@ interface HermesService {
     suspend fun getWatchlist(): List<Map<String, Any?>>
 
     @POST("stocks/watchlist")
-    suspend fun addStock(@Body body: Map<String, Any>): Map<String, Any?>
+    suspend fun addStock(@Body body: AddStockRequest): Map<String, Any?>
 
     @DELETE("stocks/watchlist/{ticker}")
     suspend fun removeStock(@Path("ticker") ticker: String): Map<String, Any?>
@@ -78,7 +81,7 @@ interface HermesService {
     @PATCH("stocks/watchlist/{ticker}/toggle")
     suspend fun toggleStock(
         @Path("ticker") ticker: String,
-        @Body body: Map<String, Any>
+        @Body body: ToggleRequest
     ): Map<String, Any?>
 
     companion object {
