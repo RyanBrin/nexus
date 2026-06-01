@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.Dashboardapp" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Dashboardapp" parent="android:Theme.Material.NoTitleBar">
+        <item name="android:windowBackground">@color/nexus_bg</item>
+        <item name="android:statusBarColor">@color/nexus_bg</item>
+        <item name="android:navigationBarColor">@color/nexus_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
 </resources>

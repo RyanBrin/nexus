@@ -1,58 +1,46 @@
 package com.example.dashboard_app.ui.theme
 
-import android.app.Activity
-import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalContext
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80
-)
+// Nexus is always dark — no light mode, no dynamic color
+private val NexusColorScheme = darkColorScheme(
+    primary              = NexusBlue,
+    onPrimary            = NexusBg,
+    primaryContainer     = NexusSurface2,
+    onPrimaryContainer   = NexusBlue,
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40
+    secondary            = NexusPurple,
+    onSecondary          = NexusBg,
+    secondaryContainer   = NexusSurface2,
+    onSecondaryContainer = NexusPurple,
 
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    tertiary             = NexusCyan,
+    onTertiary           = NexusBg,
+
+    background           = NexusBg,
+    onBackground         = NexusOnBg,
+
+    surface              = NexusSurface,
+    onSurface            = NexusOnBg,
+    surfaceVariant       = NexusSurface2,
+    onSurfaceVariant     = NexusMuted,
+
+    outline              = NexusSurface2,
+    outlineVariant       = NexusSurface3,
+
+    error                = NexusRed,
+    onError              = NexusOnBg,
+    errorContainer       = NexusSurface,
+    onErrorContainer     = NexusRed,
 )
 
 @Composable
-fun DashboardappTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    // Dynamic color is available on Android 12+
-    dynamicColor: Boolean = true,
-    content: @Composable () -> Unit
-) {
-    val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
-
+fun DashboardappTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+        colorScheme = NexusColorScheme,
+        typography  = Typography,
+        content     = content
     )
 }

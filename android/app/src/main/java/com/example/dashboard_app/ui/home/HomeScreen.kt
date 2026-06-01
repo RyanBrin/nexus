@@ -1,14 +1,22 @@
 package com.example.dashboard_app.ui.home
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
@@ -17,14 +25,14 @@ import com.example.dashboard_app.ui.calendar.CalendarViewModel
 import com.example.dashboard_app.ui.calendar.asReadableDateTime
 import com.example.dashboard_app.ui.shifts.ShiftsViewModel
 import com.example.dashboard_app.ui.stocks.StocksViewModel
+import com.example.dashboard_app.ui.theme.*
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
-private val moneyFmt: NumberFormat = NumberFormat.getCurrencyInstance(Locale.US)
-private val timeFmt = SimpleDateFormat("h:mm a", Locale.US)
-private val dateFmt = SimpleDateFormat("EEE, MMM d", Locale.US)
+private val moneyFmt = NumberFormat.getCurrencyInstance(Locale.US)
+private val timeFmt  = SimpleDateFormat("h:mm a", Locale.US)
+private val dateFmt  = SimpleDateFormat("EEE, MMM d", Locale.US)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,28 +43,35 @@ fun HomeScreen(
     stocksViewModel: StocksViewModel = viewModel(),
     shiftsViewModel: ShiftsViewModel = viewModel()
 ) {
-    val events by calendarViewModel.events.collectAsStateWithLifecycle()
-    val transactions by budgetViewModel.transactions.collectAsStateWithLifecycle()
-    val creditCards by budgetViewModel.creditCards.collectAsStateWithLifecycle()
-    val stocks by stocksViewModel.stocks.collectAsStateWithLifecycle()
-    val shifts by shiftsViewModel.shifts.collectAsStateWithLifecycle()
+    val events    by calendarViewModel.events.collectAsStateWithLifecycle()
+    val txns      by budgetViewModel.transactions.collectAsStateWithLifecycle()
+    val cards     by budgetViewModel.creditCards.collectAsStateWithLifecycle()
+    val stocks    by stocksViewModel.stocks.collectAsStateWithLifecycle()
+    val shifts    by shiftsViewModel.shifts.collectAsStateWithLifecycle()
 
-    val now = remember { System.currentTimeMillis() }
-    val upcomingEvents = events.filter { it.dateTime >= now }.take(3)
-    val upcomingShifts = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }.take(3)
-    val totalSpending = transactions.sumOf { it.amount }
-    val totalCcBalance = creditCards.sumOf { it.balance }
-    val portfolioValue = stocks.sumOf { it.price * it.shares }
+    val now              = remember { System.currentTimeMillis() }
+    val upcomingEvents   = events.filter { it.dateTime >= now }.take(3)
+    val upcomingShifts   = shifts.filter { it.startTime >= now }.sortedBy { it.startTime }.take(2)
+    val totalSpending    = txns.sumOf { it.amount }
+    val totalCcBalance   = cards.sumOf { it.balance }
+    val portfolioValue   = stocks.sumOf { it.price * it.shares }
 
     Scaffold(
+        containerColor = NexusBg,
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard") },
+                title = {
+                    Column {
+                        Text("Nexus", fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, color = NexusOnBg)
+                        Text("Personal Command Center", fontSize = 11.sp, color = NexusSubtle)
+                    }
+                },
                 actions = {
                     IconButton(onClick = { navController.navigate("settings") }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        Icon(Icons.Default.Settings, "Settings", tint = NexusMuted)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = NexusBg)
             )
         }
     ) { padding ->
@@ -64,105 +79,208 @@ fun HomeScreen(
             Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // Upcoming events
-            SummaryCard(title = "Upcoming events") {
+
+            // ── Quick stats row ───────────────────────────────────────────────
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                QuickStat(Modifier.weight(1f), "Portfolio", moneyFmt.format(portfolioValue), NexusBlue, Icons.Default.ShowChart)
+                QuickStat(Modifier.weight(1f), "Spending", moneyFmt.format(totalSpending), NexusAmber, Icons.Default.Paid)
+                QuickStat(Modifier.weight(1f), "CC Debt", moneyFmt.format(totalCcBalance), if (totalCcBalance > 500) NexusRed else NexusMuted, Icons.Default.CreditCard)
+            }
+
+            // ── Upcoming events ───────────────────────────────────────────────
+            DashCard(
+                title = "Upcoming Events",
+                icon = Icons.Default.CalendarMonth,
+                onTap = { navController.navigate("calendar") }
+            ) {
                 if (upcomingEvents.isEmpty()) {
-                    Text("Nothing scheduled.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    EmptyState("Nothing scheduled")
                 } else {
                     upcomingEvents.forEach { e ->
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            Text(e.title, style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                e.dateTime.asReadableDateTime(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        EventRow(title = e.title, subtitle = e.dateTime.asReadableDateTime())
                     }
                 }
             }
 
-            // Upcoming shifts
-            SummaryCard(title = "Upcoming shifts") {
+            // ── Upcoming shifts ───────────────────────────────────────────────
+            DashCard(
+                title = "Upcoming Shifts",
+                icon = Icons.Default.Work,
+                onTap = { navController.navigate("calendar") }
+            ) {
                 if (upcomingShifts.isEmpty()) {
-                    Text("No upcoming shifts.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    EmptyState("No upcoming shifts")
                 } else {
                     upcomingShifts.forEach { s ->
-                        Column(Modifier.padding(vertical = 4.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("${s.employer} — ${s.title}", style = MaterialTheme.typography.titleSmall)
-                            }
-                            Text(
-                                "${dateFmt.format(Date(s.startTime))}  ${timeFmt.format(Date(s.startTime))} – ${timeFmt.format(Date(s.endTime))}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
+                        val employerColor = if (s.employer == "Pebble Creek") NexusGreen else NexusBlue
+                        EventRow(
+                            title = "${s.employer} — ${s.title}",
+                            subtitle = "${dateFmt.format(Date(s.startTime))}  ${timeFmt.format(Date(s.startTime))} – ${timeFmt.format(Date(s.endTime))}",
+                            accentColor = employerColor
+                        )
+                    }
+                }
+            }
+
+            // ── Budget ────────────────────────────────────────────────────────
+            DashCard(
+                title = "Budget",
+                icon = Icons.Default.Paid,
+                onTap = { navController.navigate("budget") }
+            ) {
+                if (txns.isEmpty() && cards.isEmpty()) {
+                    EmptyState("No budget data yet")
+                } else {
+                    if (txns.isNotEmpty()) {
+                        BudgetRow("Expenses this month", moneyFmt.format(totalSpending), NexusAmber)
+                    }
+                    if (cards.isNotEmpty()) {
+                        BudgetRow("Credit card balances", moneyFmt.format(totalCcBalance),
+                            if (totalCcBalance > 1000) NexusRed else NexusMuted)
+                        cards.forEach { card ->
+                            val util = if (card.limit > 0) card.balance / card.limit else 0.0
+                            BudgetRow(
+                                "  ${card.name}",
+                                moneyFmt.format(card.balance),
+                                if (util > 0.8) NexusRed else NexusMuted,
+                                small = true
                             )
                         }
                     }
                 }
             }
 
-            // Budget
-            SummaryCard(title = "Monthly spending") {
-                if (transactions.isEmpty() && creditCards.isEmpty()) {
-                    Text("No budget data yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // ── Stocks ────────────────────────────────────────────────────────
+            DashCard(
+                title = "Watchlist",
+                icon = Icons.Default.ShowChart,
+                onTap = { navController.navigate("stocks") }
+            ) {
+                if (stocks.isEmpty()) {
+                    EmptyState("No stocks in watchlist")
                 } else {
-                    if (transactions.isNotEmpty()) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Expenses", style = MaterialTheme.typography.bodyMedium)
-                            Text(moneyFmt.format(totalSpending), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                    if (creditCards.isNotEmpty()) {
-                        Spacer(Modifier.height(4.dp))
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("CC balances", style = MaterialTheme.typography.bodyMedium)
-                            Text(moneyFmt.format(totalCcBalance), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        creditCards.forEach { card ->
-                            Spacer(Modifier.height(2.dp))
-                            Row(Modifier.fillMaxWidth().padding(start = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(card.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(moneyFmt.format(card.balance), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    BudgetRow("Portfolio value", moneyFmt.format(portfolioValue), NexusBlue)
+                    Spacer(Modifier.height(4.dp))
+                    stocks.take(4).forEach { s ->
+                        val changeColor = if (s.changePercent.startsWith("-")) NexusRed else NexusGreen
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(s.ticker, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = NexusOnSurface)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (s.changePercent.isNotBlank()) {
+                                    Text(s.changePercent, fontSize = 12.sp, color = changeColor, fontWeight = FontWeight.SemiBold)
+                                }
+                                Text(moneyFmt.format(s.price), fontSize = 13.sp, color = NexusMuted)
                             }
                         }
+                    }
+                    if (stocks.size > 4) {
+                        Text("+${stocks.size - 4} more", fontSize = 11.sp, color = NexusSubtle, modifier = Modifier.padding(top = 2.dp))
                     }
                 }
             }
 
-            // Stocks
-            SummaryCard(title = "Watchlist") {
-                if (stocks.isEmpty()) {
-                    Text("No stocks yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Portfolio value", style = MaterialTheme.typography.bodyMedium)
-                        Text(moneyFmt.format(portfolioValue), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    stocks.forEach { s ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(s.ticker, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(moneyFmt.format(s.price), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+}
+
+// ── Reusable components ───────────────────────────────────────────────────────
+
+@Composable
+private fun QuickStat(modifier: Modifier, label: String, value: String, color: Color, icon: ImageVector) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = NexusSurface),
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape).background(color.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(icon, null, tint = color, modifier = Modifier.size(15.dp))
                 }
+                Text(label, fontSize = 10.sp, color = NexusSubtle, fontWeight = FontWeight.SemiBold)
             }
+            Spacer(Modifier.height(6.dp))
+            Text(value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = color, maxLines = 1)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DashCard(
+    title: String,
+    icon: ImageVector,
+    onTap: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        onClick = onTap,
+        colors = CardDefaults.cardColors(containerColor = NexusSurface),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(icon, null, tint = NexusBlue, modifier = Modifier.size(16.dp))
+                    Text(title, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+                        color = NexusMuted, letterSpacing = 0.5.sp)
+                }
+                Icon(Icons.Default.ChevronRight, null, tint = NexusDisabled, modifier = Modifier.size(16.dp))
+            }
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = NexusSurface2, thickness = 0.5.dp)
+            Spacer(Modifier.height(10.dp))
+            content()
         }
     }
 }
 
 @Composable
-private fun SummaryCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
+private fun EventRow(title: String, subtitle: String, accentColor: Color = NexusBlue) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier.width(3.dp).height(32.dp).clip(MaterialTheme.shapes.small)
+                .background(accentColor)
+        )
+        Spacer(Modifier.width(10.dp))
+        Column {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = NexusOnBg, maxLines = 1)
+            Text(subtitle, fontSize = 11.sp, color = NexusMuted)
         }
     }
+}
+
+@Composable
+private fun BudgetRow(label: String, value: String, valueColor: Color, small: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = if (small) 1.dp else 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, fontSize = if (small) 12.sp else 13.sp, color = if (small) NexusMuted else NexusOnSurface)
+        Text(value, fontSize = if (small) 12.sp else 13.sp, fontWeight = FontWeight.Bold, color = valueColor)
+    }
+}
+
+@Composable
+private fun EmptyState(text: String) {
+    Text(text, fontSize = 13.sp, color = NexusSubtle, modifier = Modifier.padding(vertical = 4.dp))
 }
