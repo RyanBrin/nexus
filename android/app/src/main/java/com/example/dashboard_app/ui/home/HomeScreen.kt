@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import com.example.dashboard_app.ui.budget.BudgetViewModel
 import com.example.dashboard_app.ui.calendar.CalendarViewModel
@@ -31,6 +32,15 @@ import java.text.SimpleDateFormat
 import java.util.*
 
 private val moneyFmt = NumberFormat.getCurrencyInstance(Locale.US)
+
+// Navigate to a tab the same way the bottom bar does — prevents duplicate back-stack entries
+private fun NavHostController.navigateToTab(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
 private val timeFmt  = SimpleDateFormat("h:mm a", Locale.US)
 private val dateFmt  = SimpleDateFormat("EEE, MMM d", Locale.US)
 
@@ -95,7 +105,7 @@ fun HomeScreen(
             DashCard(
                 title = "Upcoming Events",
                 icon = Icons.Default.CalendarMonth,
-                onTap = { navController.navigate("calendar") }
+                onTap = { navController.navigateToTab("calendar") }
             ) {
                 if (upcomingEvents.isEmpty()) {
                     EmptyState("Nothing scheduled")
@@ -110,7 +120,7 @@ fun HomeScreen(
             DashCard(
                 title = "Upcoming Shifts",
                 icon = Icons.Default.Work,
-                onTap = { navController.navigate("calendar") }
+                onTap = { navController.navigateToTab("calendar") }
             ) {
                 if (upcomingShifts.isEmpty()) {
                     EmptyState("No upcoming shifts")
@@ -130,7 +140,7 @@ fun HomeScreen(
             DashCard(
                 title = "Budget",
                 icon = Icons.Default.Paid,
-                onTap = { navController.navigate("budget") }
+                onTap = { navController.navigateToTab("budget") }
             ) {
                 if (txns.isEmpty() && cards.isEmpty()) {
                     EmptyState("No budget data yet")
@@ -158,7 +168,7 @@ fun HomeScreen(
             DashCard(
                 title = "Watchlist",
                 icon = Icons.Default.ShowChart,
-                onTap = { navController.navigate("stocks") }
+                onTap = { navController.navigateToTab("stocks") }
             ) {
                 if (stocks.isEmpty()) {
                     EmptyState("No stocks in watchlist")
