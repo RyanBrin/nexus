@@ -168,6 +168,17 @@ async def strategy_performance():
     return performance.calculate_all(trades)
 
 
+@app.get("/strategy/phase")
+async def strategy_phase():
+    from hermes_trading import performance, strategy_registry
+    from hermes_trading.phase_tracker import check_phase_progress
+    trades = await db.load_trades()
+    strategy_registry.bootstrap_from_existing()
+    active_name = strategy_registry.get_active_strategy_name()
+    perf = performance.calculate(active_name, trades)
+    return check_phase_progress(perf.to_dict(), trades)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     return HTMLResponse(content=_DASHBOARD_HTML)
@@ -382,6 +393,11 @@ def _build_dashboard_html() -> str:
     </div>
     <!-- Live BTC trade on overview -->
     <div id="ov-live-trade"></div>
+    <!-- Phase progress -->
+    <div class="card" id="phase-card">
+      <div class="card-header"><h2>Phase Progress</h2><span class="card-meta" id="phase-label">loading...</span></div>
+      <div id="phase-body"><div class="empty">Loading phase data...</div></div>
+    </div>
   </div>
 
   <!-- ══ BTC BOT TAB ══ -->
@@ -1034,15 +1050,69 @@ let perfData = {};
 
 async function fetchStrategies() {
   try {
-    const [strategies, perf] = await Promise.all([
+    const [strategies, perf, phase] = await Promise.all([
       fetch('/strategy/list').then(r => r.json()),
       fetch('/strategy/performance').then(r => r.json()),
+      fetch('/strategy/phase').then(r => r.json()),
     ]);
     strategyData = strategies;
     perfData = perf;
     renderStrategies();
     renderPerformanceTable();
+    renderPhase(phase);
   } catch(e) { console.error('strategy fetch failed', e); }
+}
+
+function renderPhase(p) {
+  const label = document.getElementById('phase-label');
+  const body = document.getElementById('phase-body');
+  if (!p || !label || !body) return;
+
+  label.textContent = `Phase ${p.current_phase}: ${p.phase_name}`;
+
+  const checks = p.checks || {};
+  const checkRows = Object.values(checks).map(c => {
+    const icon = c.passed ? '✓' : '✗';
+    const color = c.passed ? '#22c55e' : '#ef4444';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #0f172a">
+      <span style="color:${color};font-weight:800;font-size:1rem;flex-shrink:0">${icon}</span>
+      <span style="font-size:0.82rem;flex:1">${c.label}</span>
+      <span style="font-size:0.78rem;color:${c.passed?'#22c55e':'#94a3b8'};flex-shrink:0">${c.value} / ${c.target}</span>
+    </div>`;
+  }).join('');
+
+  // Progress bar
+  const pct = p.overall_progress_pct || 0;
+  const barColor = p.phase_passed ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#0AAAFF';
+
+  // Trade progress bar
+  const tradePct = checks.trades_progress?.progress_pct || 0;
+
+  body.innerHTML = `
+    <div style="margin-bottom:12px">
+      <div style="font-size:0.78rem;color:#64748b;margin-bottom:6px">${p.phase_description}</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:0.72rem;color:#475569">Conditions met</span>
+        <span style="font-size:0.72rem;font-weight:700;color:${barColor}">${p.passed_count}/${p.total_checks}</span>
+      </div>
+      <div style="background:#1e293b;border-radius:4px;height:6px;overflow:hidden">
+        <div style="height:100%;background:${barColor};border-radius:4px;width:${pct}%;transition:width 0.5s"></div>
+      </div>
+    </div>
+    ${tradePct < 100 ? `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:0.72rem;color:#475569">Trade count progress</span>
+        <span style="font-size:0.72rem;font-weight:700;color:#0AAAFF">${checks.trades_progress?.value||0}/${checks.trades_progress?.target||100}</span>
+      </div>
+      <div style="background:#1e293b;border-radius:4px;height:4px;overflow:hidden">
+        <div style="height:100%;background:#0AAAFF;border-radius:4px;width:${tradePct}%;transition:width 0.5s"></div>
+      </div>
+    </div>` : ''}
+    <div>${checkRows}</div>
+    <div style="margin-top:12px;padding:10px;background:${p.phase_passed?'#22c55e11':'#0f172a'};border-radius:8px;border:1px solid ${p.phase_passed?'#22c55e44':'#1e293b'}">
+      <div style="font-size:0.8rem;color:${p.phase_passed?'#22c55e':'#94a3b8'};line-height:1.5">${p.verdict}</div>
+      ${p.unlock_next && p.phase_passed ? `<div style="font-size:0.75rem;color:#475569;margin-top:4px">Next: ${p.unlock_next}</div>` : ''}
+    </div>`;
 }
 
 function renderStrategies() {

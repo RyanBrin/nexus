@@ -1,7 +1,62 @@
+# ── Hermes Master Goal ───────────────────────────────────────────────────────
+# Develop and validate a repeatable swing-trading strategy that produces
+# positive expectancy in paper trading before any live-money execution.
+#
+# Objective: Maximize risk-adjusted expectancy while staying inside strict
+# drawdown limits. NOT "maximize profit" — that leads to reckless behavior.
+# ─────────────────────────────────────────────────────────────────────────────
+
 asset: "BTC/USDT"
-target_return_30d: 0.05     # success
-max_drawdown:      0.08     # failure
-min_sharpe:        1.0      # quality bar
-failure_below:     -0.04    # score floor
-reflection_every:  5        # cycle cadence
-one_variable_only: true     # scientific-method guardrail
+
+# ── Current phase ────────────────────────────────────────────────────────────
+current_phase: 1
+phase_description: "Paper trade only — build evidence of edge"
+
+# ── Phase definitions ─────────────────────────────────────────────────────────
+phases:
+  1:
+    name: "Validate Edge"
+    description: "Paper trade only. Prove the strategy has positive expectancy."
+    min_trades: 100
+    pass_conditions:
+      expectancy_positive: true          # expectancy > 0
+      min_profit_factor: 1.3            # gross wins / gross losses > 1.3
+      max_drawdown_pct: 10.0            # peak-to-trough < 10%
+      every_trade_has_stop: true        # no trade without stop loss
+      every_trade_has_reason: true      # no trade without logged reason
+      no_mid_batch_edits: true          # strategy locked during batch
+    unlock_next: "Phase 2: Manual approval trades with tiny real size"
+
+  2:
+    name: "Manual Approval"
+    description: "Hermes suggests trades. Human approves each one. No full auto."
+    min_trades: 50
+    pass_conditions:
+      expectancy_positive: true
+      min_profit_factor: 1.3
+      max_drawdown_pct: 8.0
+      approval_required: true
+    unlock_next: "Phase 3: Live auto with strict size limits"
+
+  3:
+    name: "Live Tiny"
+    description: "Automated with tiny position size. Strict kill switch."
+    min_trades: 100
+    pass_conditions:
+      expectancy_positive: true
+      min_profit_factor: 1.5
+      max_drawdown_pct: 5.0
+      max_risk_per_trade_pct: 0.5
+      max_daily_loss_pct: 1.0
+      kill_switch_required: true
+
+# ── Risk limits (apply to ALL phases) ────────────────────────────────────────
+max_drawdown:       0.08    # hard stop — if exceeded, halt trading
+max_risk_per_trade: 0.015   # 1.5% risk per trade default
+min_sharpe:         1.0
+failure_below:      -0.04   # score floor for reflection engine
+
+# ── Reflection settings ───────────────────────────────────────────────────────
+reflection_every:   25      # batch size — only reflect after 25 trades
+one_variable_only:  true    # scientific method guardrail
+reflection_objective: "maximize_risk_adjusted_expectancy"  # NOT maximize_profit

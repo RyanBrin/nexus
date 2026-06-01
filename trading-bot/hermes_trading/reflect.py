@@ -220,21 +220,40 @@ def reflect_hermes(force: bool = False):
     perf_dict = perf.to_dict()
     perf_summary = _build_performance_summary(all_trades, active_name)
 
+    from hermes_trading import performance as perf_module
+    from hermes_trading.phase_tracker import check_phase_progress
+
+    all_perf = perf_module.calculate(active_name, all_trades)
+    phase_progress = check_phase_progress(all_perf.to_dict(), all_trades)
+
     prompt = (
-        "You are a trading strategy optimizer reviewing a batch of trades.\n\n"
+        "You are Hermes, a disciplined trading strategy optimizer.\n\n"
+        "YOUR OBJECTIVE: Maximize risk-adjusted expectancy while staying inside strict "
+        "drawdown limits. Do NOT optimize for raw profit — that leads to reckless behavior.\n\n"
+        f"MASTER GOAL: {goal.get('reflection_objective', 'maximize_risk_adjusted_expectancy')}\n\n"
+        f"CURRENT PHASE: {phase_progress['phase_name']}\n"
+        f"PHASE GOAL: {phase_progress['phase_description']}\n"
+        f"PHASE PROGRESS: {phase_progress['passed_count']}/{phase_progress['total_checks']} conditions met\n"
+        f"PHASE VERDICT: {phase_progress['verdict']}\n\n"
         f"PERFORMANCE SUMMARY ({len(new_trades)} trades since last reflection):\n{perf_summary}\n\n"
-        f"GOAL:\n{yaml.dump(goal)}\n"
+        f"GOAL CONSTRAINTS:\n"
+        f"  max_drawdown: {goal.get('max_drawdown', 0.08)*100:.0f}%\n"
+        f"  max_risk_per_trade: {goal.get('max_risk_per_trade', 0.015)*100:.1f}%\n"
+        f"  min_profit_factor: 1.3\n"
+        f"  target_expectancy: > 0\n\n"
         f"CURRENT STRATEGY ({active_name}):\n{yaml.dump(strategy)}\n"
         f"RECENT TRADES (last {min(25, len(new_trades))}):\n"
         f"{json.dumps(new_trades[-25:], indent=2)}\n"
         f"CURRENT SCORE: {current_score:.3f} (range -1 to +1)\n\n"
         "Rules:\n"
-        "- Change exactly ONE variable. Scientific method — one variable at a time.\n"
-        "- Do NOT change max_drawdown, stop_loss beyond ±0.5, or remove any field.\n"
+        "- Change exactly ONE variable. Scientific method.\n"
+        "- NEVER increase risk beyond the goal constraints.\n"
+        "- NEVER remove stop_loss or set it to 0.\n"
+        "- If expectancy is positive and drawdown is under limit: make a SMALL conservative change.\n"
+        "- If expectancy is negative: diagnose why (bad entries? too early? wrong threshold?) and change the most likely cause.\n"
+        "- If phase conditions are not met: focus on the failing condition.\n"
         "- Output ONLY valid YAML for the updated strategy. Nothing else.\n"
         "- Do not change the version field.\n"
-        "- Consider the performance summary. If expectancy is positive, be conservative.\n"
-        "- If expectancy is negative, be more aggressive in changing things.\n"
     )
 
     try:
