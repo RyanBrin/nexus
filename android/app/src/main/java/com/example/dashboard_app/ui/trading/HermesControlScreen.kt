@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
 import com.example.dashboard_app.data.network.HermesTradeIdea
 
 private val nexusBlue   = Color(0xFF0AAAFF)
@@ -27,7 +29,10 @@ private val border      = Color(0xFF1E293B)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HermesControlScreen(vm: HermesControlViewModel = viewModel()) {
+fun HermesControlScreen(
+    vm: HermesControlViewModel = viewModel(),
+    navController: NavHostController? = null
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Status", "Watchlist", "Trade Ideas", "Risk Rules")
@@ -36,6 +41,11 @@ fun HermesControlScreen(vm: HermesControlViewModel = viewModel()) {
         topBar = {
             TopAppBar(
                 title = { Text("Hermes Control", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = { navController?.navigateUp() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { vm.refresh() }) {
                         Icon(Icons.Default.Refresh, "Refresh", tint = nexusBlue)

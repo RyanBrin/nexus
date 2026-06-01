@@ -12,8 +12,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.dashboard_app.ui.theme.DashboardappTheme
 import com.example.dashboard_app.work.EventReminderWorker
@@ -44,11 +46,20 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// Routes that should NOT show the bottom nav bar
+private val fullScreenRoutes = setOf("hermes_control", "settings")
+
 @Composable
 fun DashboardApp() {
     DashboardappTheme {
         val navController = rememberNavController()
-        Scaffold(bottomBar = { DashboardBottomBar(navController) }) { padding ->
+        val backStackEntry by navController.currentBackStackEntryAsState()
+        val currentRoute = backStackEntry?.destination?.route
+        val showBottomBar = currentRoute !in fullScreenRoutes
+
+        Scaffold(
+            bottomBar = { if (showBottomBar) DashboardBottomBar(navController) }
+        ) { padding ->
             Box(Modifier.padding(padding)) {
                 DashboardNavHost(navController)
             }

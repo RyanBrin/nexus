@@ -65,7 +65,7 @@ fun DashboardNavHost(navController: NavHostController) {
         composable(Dest.Budget.route) { BudgetScreen() }
         composable(Dest.Stocks.route) { StocksScreen() }
         composable(Dest.Trading.route) { TradingScreen(navController = navController) }
-        composable("hermes_control") { HermesControlScreen() }
-        composable("settings") { SettingsScreen() }
+        composable("hermes_control") { HermesControlScreen(navController = navController) }
+        composable("settings") { SettingsScreen(navController = navController) }
     }
 }
