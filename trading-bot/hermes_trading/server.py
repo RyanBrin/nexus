@@ -119,6 +119,55 @@ async def stock_logs():
     return load_stock_logs(50)
 
 
+@app.get("/strategy/list")
+async def strategy_list():
+    from hermes_trading.strategy_registry import list_strategies, bootstrap_from_existing
+    bootstrap_from_existing()
+    return list_strategies()
+
+
+@app.get("/strategy/active")
+async def strategy_active():
+    from hermes_trading.strategy_registry import get_active_strategy_name, load_strategy_meta, load_strategy_params
+    name = get_active_strategy_name()
+    return {
+        "name": name,
+        "meta": load_strategy_meta(name) or {},
+        "params": load_strategy_params(name) or {},
+    }
+
+
+@app.post("/strategy/select/{name}")
+async def strategy_select(name: str):
+    from hermes_trading.strategy_registry import set_active_strategy, list_strategies
+    names = [s["name"] for s in list_strategies()]
+    if name not in names:
+        raise HTTPException(status_code=404, detail=f"Strategy '{name}' not found")
+    set_active_strategy(name)
+    return {"ok": True, "active": name}
+
+
+@app.post("/strategy/lock/{name}")
+async def strategy_lock(name: str):
+    from hermes_trading.strategy_registry import lock_strategy
+    lock_strategy(name)
+    return {"ok": True, "locked": name}
+
+
+@app.post("/strategy/unlock/{name}")
+async def strategy_unlock(name: str):
+    from hermes_trading.strategy_registry import unlock_strategy
+    unlock_strategy(name)
+    return {"ok": True, "unlocked": name}
+
+
+@app.get("/strategy/performance")
+async def strategy_performance():
+    from hermes_trading import performance
+    trades = await db.load_trades()
+    return performance.calculate_all(trades)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     return HTMLResponse(content=_DASHBOARD_HTML)
@@ -303,7 +352,8 @@ def _build_dashboard_html() -> str:
     <button class="tab-btn" onclick="showTab('btc',this)">BTC Bot</button>
     <button class="tab-btn" onclick="showTab('stocks',this)">Stocks</button>
     <button class="tab-btn" onclick="showTab('active',this)">Active Trades</button>
-    <button class="tab-btn" onclick="showTab('logs',this)">Strategy Logs</button>
+    <button class="tab-btn" onclick="showTab('strategy',this)">Strategies</button>
+    <button class="tab-btn" onclick="showTab('logs',this)">Logs</button>
   </div>
 
   <!-- ══ OVERVIEW TAB ══ -->
@@ -466,12 +516,36 @@ def _build_dashboard_html() -> str:
   <div class="two-col">
     <div class="card">
       <div class="card-header"><h2>Last Reflection</h2></div>
-      <div id="reflection-body"><div class="empty">No reflections yet — fires after 5 closed trades.</div></div>
+      <div id="reflection-body"><div class="empty">No reflections yet — fires after 25 closed trades.</div></div>
     </div>
     <div class="card">
       <div class="card-header"><h2>Current Strategy</h2></div>
       <pre id="strategy-pre">Loading...</pre>
     </div>
+  </div>
+</div>
+
+<!-- ══ STRATEGY SELECTOR TAB ══ -->
+<div class="tab-pane" id="tab-strategy">
+  <div class="card">
+    <div class="card-header">
+      <h2>Strategy Selector</h2>
+      <span class="card-meta" id="strat-active-label">loading...</span>
+    </div>
+    <div id="strategy-list"><div class="empty">Loading strategies...</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>Performance by Strategy</h2><span class="card-meta">expectancy = edge</span></div>
+    <div id="perf-table"><div class="empty">No performance data yet.</div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2>What is Expectancy?</h2></div>
+    <p style="font-size:0.82rem;color:#94a3b8;line-height:1.6">
+      <strong style="color:#e2e8f0">Expectancy</strong> = (Win Rate × Avg Win) − (Loss Rate × Avg Loss)<br>
+      A <strong style="color:#22c55e">positive expectancy</strong> means the strategy has edge over time.<br>
+      <strong style="color:#f59e0b">Data quality:</strong> insufficient &lt;25 trades · early signal 25–50 · useful 50–100 · reliable 100+<br>
+      <strong style="color:#ef4444">Lock a strategy</strong> once it proves positive expectancy — don't let Claude change what's working.
+    </p>
   </div>
 </div>
 
@@ -668,7 +742,7 @@ function render(status, trades) {
       <div class="log-reasoning">${hyp.rationale || '—'}</div>
     </div>`;
   } else {
-    refDiv.innerHTML = '<div class="empty">No reflections yet — fires after 5 closed trades.</div>';
+    refDiv.innerHTML = '<div class="empty">No reflections yet — fires after 25 closed trades (batch review).</div>';
   }
 }
 
@@ -954,6 +1028,111 @@ function renderStockLogs(logs) {
     </div>`).join('');
 }
 
+// ── Strategy selector ────────────────────────────────────────
+let strategyData = [];
+let perfData = {};
+
+async function fetchStrategies() {
+  try {
+    const [strategies, perf] = await Promise.all([
+      fetch('/strategy/list').then(r => r.json()),
+      fetch('/strategy/performance').then(r => r.json()),
+    ]);
+    strategyData = strategies;
+    perfData = perf;
+    renderStrategies();
+    renderPerformanceTable();
+  } catch(e) { console.error('strategy fetch failed', e); }
+}
+
+function renderStrategies() {
+  const el = document.getElementById('strategy-list');
+  const activeLabel = document.getElementById('strat-active-label');
+  const active = strategyData.find(s => s.active);
+  if (activeLabel && active) activeLabel.textContent = `Active: ${active.name}`;
+
+  if (!strategyData.length) {
+    el.innerHTML = '<div class="empty">No strategies registered yet. Run at least one trade to bootstrap.</div>';
+    return;
+  }
+
+  el.innerHTML = strategyData.map(s => {
+    const perf = s.performance || {};
+    const isActive = s.active;
+    const isLocked = s.locked;
+    const expectancy = perf.expectancy_pct != null ? perf.expectancy_pct : null;
+    const hasEdge = expectancy > 0 && (perf.total_trades || 0) >= 25;
+    const borderColor = isActive ? '#0AAAFF' : isLocked ? '#22c55e' : '#1e293b';
+
+    return `<div style="background:#111827;border:1px solid ${borderColor};border-radius:12px;padding:14px 16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <span style="font-size:1rem;font-weight:800;color:#f8fafc">${s.name}</span>
+        ${isActive ? '<span class="badge asset-stock">ACTIVE</span>' : ''}
+        ${isLocked ? '<span class="badge" style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e33">🔒 LOCKED</span>' : ''}
+        ${hasEdge ? '<span class="badge" style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e33">✓ Edge Detected</span>' : ''}
+        <span style="color:#475569;font-size:0.75rem;margin-left:auto">${fmtTs(s.created_at)}</span>
+      </div>
+      ${s.description ? `<div style="font-size:0.78rem;color:#64748b;margin-bottom:8px">${s.description}</div>` : ''}
+      ${s.reason_created ? `<div style="font-size:0.78rem;color:#475569;margin-bottom:8px;font-style:italic">Created because: ${s.reason_created}</div>` : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;margin-bottom:10px">
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Trades</div><div style="font-size:0.85rem;font-weight:700">${perf.total_trades || 0}</div></div>
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Win Rate</div><div style="font-size:0.85rem;font-weight:700;color:${(perf.win_rate_pct||0)>=50?'#22c55e':'#ef4444'}">${perf.win_rate_pct != null ? perf.win_rate_pct+'%' : '—'}</div></div>
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Expectancy</div><div style="font-size:0.85rem;font-weight:700;color:${expectancy>0?'#22c55e':expectancy<0?'#ef4444':'#94a3b8'}">${expectancy != null ? (expectancy>=0?'+':'')+expectancy.toFixed(4)+'%' : '—'}</div></div>
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Profit Factor</div><div style="font-size:0.85rem;font-weight:700;color:${(perf.profit_factor||0)>=1?'#22c55e':'#ef4444'}">${perf.profit_factor != null ? perf.profit_factor : '—'}</div></div>
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Max DD</div><div style="font-size:0.85rem;font-weight:700;color:${(perf.max_drawdown_pct||0)>8?'#ef4444':'#94a3b8'}">${perf.max_drawdown_pct != null ? perf.max_drawdown_pct+'%' : '—'}</div></div>
+        <div><div style="font-size:0.62rem;color:#475569;text-transform:uppercase;margin-bottom:2px">Quality</div><div style="font-size:0.85rem;font-weight:700;color:${perf.data_quality==='reliable'?'#22c55e':perf.data_quality==='useful'?'#f59e0b':'#64748b'}">${perf.data_quality || '—'}</div></div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${!isActive ? `<button onclick="selectStrategy('${s.name}')" style="background:#0AAAFF;color:#080f1a;border:none;padding:6px 14px;border-radius:8px;font-weight:700;font-size:0.78rem;cursor:pointer">Set Active</button>` : ''}
+        ${!isLocked ? `<button onclick="lockStrategy('${s.name}')" style="background:#22c55e22;color:#22c55e;border:1px solid #22c55e44;padding:6px 14px;border-radius:8px;font-weight:700;font-size:0.78rem;cursor:pointer">🔒 Lock</button>` : `<button onclick="unlockStrategy('${s.name}')" style="background:#ef444422;color:#ef4444;border:1px solid #ef444444;padding:6px 14px;border-radius:8px;font-weight:700;font-size:0.78rem;cursor:pointer">Unlock</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderPerformanceTable() {
+  const el = document.getElementById('perf-table');
+  const entries = Object.entries(perfData);
+  if (!entries.length) {
+    el.innerHTML = '<div class="empty">No trades yet. Performance data will appear after first trades.</div>';
+    return;
+  }
+  const rows = entries.map(([name, p]) => {
+    const edgeColor = p.expectancy_pct > 0 ? '#22c55e' : '#ef4444';
+    return `<tr>
+      <td style="font-weight:700">${name}</td>
+      <td>${p.total_trades}</td>
+      <td style="color:${p.win_rate_pct>=50?'#22c55e':'#ef4444'}">${p.win_rate_pct}%</td>
+      <td style="color:#22c55e">+${p.avg_win_pct}%</td>
+      <td style="color:#ef4444">-${p.avg_loss_pct}%</td>
+      <td style="color:${p.profit_factor>=1?'#22c55e':'#ef4444'}">${p.profit_factor}x</td>
+      <td style="color:${edgeColor};font-weight:700">${p.expectancy_pct>=0?'+':''}${p.expectancy_pct}%</td>
+      <td style="color:${p.max_drawdown_pct>8?'#ef4444':'#94a3b8'}">${p.max_drawdown_pct}%</td>
+      <td style="color:${p.data_quality==='reliable'?'#22c55e':p.data_quality==='useful'?'#f59e0b':'#64748b'}">${p.data_quality}</td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Strategy</th><th>Trades</th><th>Win%</th><th>Avg Win</th><th>Avg Loss</th><th>PF</th><th>Expectancy</th><th>Max DD</th><th>Quality</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+async function selectStrategy(name) {
+  await fetch('/strategy/select/' + name, {method:'POST'});
+  fetchStrategies();
+}
+
+async function lockStrategy(name) {
+  if (!confirm(`Lock strategy ${name}? Claude cannot modify it until you unlock it.`)) return;
+  await fetch('/strategy/lock/' + name, {method:'POST'});
+  fetchStrategies();
+}
+
+async function unlockStrategy(name) {
+  await fetch('/strategy/unlock/' + name, {method:'POST'});
+  fetchStrategies();
+}
+
 // ── Main fetch ──────────────────────────────────────────────
 async function fetchAll() {
   const [status, trades] = await Promise.all([
@@ -966,7 +1145,7 @@ async function fetchAll() {
 }
 
 async function fetchAllData() {
-  await Promise.all([fetchAll(), fetchStocks(), fetchStockLogs()]);
+  await Promise.all([fetchAll(), fetchStocks(), fetchStockLogs(), fetchStrategies()]);
 }
 
 // Refresh every 5s

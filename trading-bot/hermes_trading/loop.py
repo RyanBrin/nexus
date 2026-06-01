@@ -116,8 +116,48 @@ def _should_exit_profit(strategy: dict, market: dict) -> bool:
     return rsi > exit_threshold
 
 
+def _build_reason_report(asset: str, price: float, strategy: dict, market: dict, source: str) -> dict:
+    """Build a full reason report for every trade entry — ChatGPT's recommended pattern."""
+    closes = market.get("closes_15m") or market.get("closes_1h", [])
+    rsi = _compute_rsi(closes)
+    stop_loss_pct = strategy.get("stop_loss_pct", 1.0)
+    threshold = strategy.get("entry", {}).get("threshold", 35)
+    exit_threshold = strategy.get("exit_rsi_threshold", 55)
+    stop_price = round(price * (1 - stop_loss_pct / 100), 2)
+
+    reasons = []
+    if rsi is not None:
+        reasons.append(f"RSI={rsi:.1f} < {threshold} (oversold signal on 15m)")
+    reasons.append(f"Stop loss: {stop_loss_pct}% below entry at ${stop_price:,.2f}")
+    reasons.append(f"Take profit: RSI > {exit_threshold} recovery")
+    if market.get("dxy"):
+        reasons.append(f"DXY={market['dxy']:.2f}")
+    if market.get("headline_sentiment") is not None:
+        sent = market["headline_sentiment"]
+        reasons.append(f"News sentiment: {sent:+.2f}")
+
+    return {
+        "entry_reason": f"{source.upper()} signal on {asset}",
+        "rsi_at_entry": round(rsi, 2) if rsi is not None else None,
+        "stop_loss_price": stop_price,
+        "stop_loss_pct": stop_loss_pct,
+        "take_profit_trigger": f"RSI > {exit_threshold}",
+        "strategy_version": strategy.get("version"),
+        "strategy_name": strategy.get("version"),
+        "reasons": reasons,
+        "confidence": "auto-rsi",
+    }
+
+
 async def run_loop(asset: str) -> None:
     consecutive_failures = 0
+
+    # Bootstrap strategy registry on first run
+    try:
+        from hermes_trading.strategy_registry import bootstrap_from_existing
+        bootstrap_from_existing()
+    except Exception:
+        pass
 
     # Restore any trade that was open before the last restart
     try:
@@ -201,6 +241,7 @@ async def run_loop(asset: str) -> None:
             # RSI entry (only if no TV signal and no open trade)
             elif open_trade is None and _should_enter(strategy, market):
                 position_size_r = strategy.get("position_size_r", 0.5)
+                reason_report = _build_reason_report(asset, current_price, strategy, market, "rsi")
                 open_trade = {
                     "asset": asset,
                     "direction": strategy["entry"]["direction"],
@@ -208,9 +249,11 @@ async def run_loop(asset: str) -> None:
                     "entry_ts": tick_start.isoformat(),
                     "position_size_r": position_size_r,
                     "strategy_version": strategy.get("version"),
+                    "strategy_name": strategy.get("version"),
                     "source": "rsi",
+                    **reason_report,
                 }
-                log.info(f"Trade opened (RSI): {asset} @ {current_price}")
+                log.info(f"Trade opened (RSI): {asset} @ {current_price} | stop=${reason_report['stop_loss_price']:,.2f}")
 
             trades = await _load_trades()
             s = compute_score(trades, goal)
