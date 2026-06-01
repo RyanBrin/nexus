@@ -6,8 +6,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.TrendingDown
+import androidx.navigation.NavHostController
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,7 +32,7 @@ private val moneyFmt = NumberFormat.getCurrencyInstance(Locale.US)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TradingScreen(vm: TradingViewModel = viewModel()) {
+fun TradingScreen(vm: TradingViewModel = viewModel(), navController: NavHostController? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
     val status = state.status
     val trades = state.trades
@@ -51,6 +53,11 @@ fun TradingScreen(vm: TradingViewModel = viewModel()) {
                     }
                 },
                 actions = {
+                    if (navController != null) {
+                        IconButton(onClick = { navController.navigate("hermes_control") }) {
+                            Icon(Icons.Default.Settings, "Hermes Control", tint = nexusBlue)
+                        }
+                    }
                     IconButton(onClick = { vm.refresh() }) {
                         Icon(Icons.Default.Refresh, "Refresh", tint = nexusBlue)
                     }

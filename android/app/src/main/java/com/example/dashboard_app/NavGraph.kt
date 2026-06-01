@@ -24,6 +24,7 @@ import com.example.dashboard_app.ui.calendar.CalendarScreen
 import com.example.dashboard_app.ui.home.HomeScreen
 import com.example.dashboard_app.ui.settings.SettingsScreen
 import com.example.dashboard_app.ui.stocks.StocksScreen
+import com.example.dashboard_app.ui.trading.HermesControlScreen
 import com.example.dashboard_app.ui.trading.TradingScreen
 
 enum class Dest(val route: String, val label: String, val icon: ImageVector) {
@@ -63,7 +64,8 @@ fun DashboardNavHost(navController: NavHostController) {
         composable(Dest.Calendar.route) { CalendarScreen() }
         composable(Dest.Budget.route) { BudgetScreen() }
         composable(Dest.Stocks.route) { StocksScreen() }
-        composable(Dest.Trading.route) { TradingScreen() }
+        composable(Dest.Trading.route) { TradingScreen(navController = navController) }
+        composable("hermes_control") { HermesControlScreen() }
         composable("settings") { SettingsScreen() }
     }
 }

@@ -119,6 +119,98 @@ async def stock_logs():
     return load_stock_logs(50)
 
 
+# ── Hermes Control Center endpoints ─────────────────────────────────────────
+
+@app.get("/hermes/status")
+async def hermes_status():
+    from hermes_trading.agent_state import load_status, load_settings
+    from hermes_trading.agents.risk_manager import get_active_rules
+    from hermes_trading.trade_ideas import get_stats as idea_stats
+    return {
+        "status": load_status(),
+        "settings": load_settings(),
+        "risk_rules": get_active_rules(),
+        "idea_stats": idea_stats(),
+    }
+
+
+@app.get("/hermes/settings")
+async def get_settings():
+    from hermes_trading.agent_state import load_settings
+    return load_settings()
+
+
+@app.patch("/hermes/settings")
+async def update_settings(request: Request):
+    from hermes_trading.agent_state import load_settings, save_settings
+    data = await request.json()
+    settings = load_settings()
+    # Merge — but never allow changing live_trading_enabled via API
+    data.pop("live_trading_enabled", None)
+    settings.update(data)
+    save_settings(settings)
+    return {"ok": True}
+
+
+@app.get("/hermes/risk-rules")
+async def risk_rules():
+    from hermes_trading.agents.risk_manager import get_active_rules
+    return get_active_rules()
+
+
+@app.get("/hermes/trade-ideas")
+async def trade_ideas(limit: int = 50, status: str = ""):
+    from hermes_trading.trade_ideas import load_ideas
+    return load_ideas(limit=limit, status=status or None)
+
+
+@app.get("/hermes/trade-ideas/stats")
+async def trade_idea_stats():
+    from hermes_trading.trade_ideas import get_stats
+    return get_stats()
+
+
+@app.get("/hermes/logs")
+async def hermes_logs():
+    """Aggregated log view: scans, ideas, opens, closes, rejections, errors."""
+    from hermes_trading.trade_ideas import load_ideas
+    from hermes_trading.agent_state import load_status
+    status = load_status()
+    recent_ideas = load_ideas(limit=30)
+    recent_hyp = await db.load_hypotheses()
+    return {
+        "errors": status.get("errors", []),
+        "recent_trade_ideas": recent_ideas,
+        "recent_reflections": recent_hyp[-10:] if recent_hyp else [],
+        "last_scan": status.get("last_stock_scan"),
+        "last_btc_tick": status.get("last_btc_tick"),
+    }
+
+
+@app.get("/hermes/performance/by-ticker")
+async def performance_by_ticker():
+    from hermes_trading.stocks.loop import _load_stock_trades
+    stock_trades = _load_stock_trades()
+    by_ticker: dict[str, dict] = {}
+    for t in stock_trades:
+        ticker = t.get("ticker", "unknown")
+        if ticker not in by_ticker:
+            by_ticker[ticker] = {"trades": 0, "wins": 0, "total_pnl": 0.0, "pnls": []}
+        pnl = t.get("pnl_pct", 0)
+        by_ticker[ticker]["trades"] += 1
+        by_ticker[ticker]["total_pnl"] += pnl
+        by_ticker[ticker]["pnls"].append(pnl)
+        if pnl > 0:
+            by_ticker[ticker]["wins"] += 1
+    # Add win rate + avg
+    for t, d in by_ticker.items():
+        n = d["trades"]
+        d["win_rate_pct"] = round(d["wins"] / n * 100, 1) if n else 0
+        d["avg_pnl_pct"] = round(d["total_pnl"] / n * 100, 3) if n else 0
+        d.pop("pnls")
+    return by_ticker
+
+
 @app.get("/strategy/list")
 async def strategy_list():
     from hermes_trading.strategy_registry import list_strategies, bootstrap_from_existing
@@ -364,6 +456,7 @@ def _build_dashboard_html() -> str:
     <button class="tab-btn" onclick="showTab('stocks',this)">Stocks</button>
     <button class="tab-btn" onclick="showTab('active',this)">Active Trades</button>
     <button class="tab-btn" onclick="showTab('strategy',this)">Strategies</button>
+    <button class="tab-btn" onclick="showTab('control',this)">⚙ Control Center</button>
     <button class="tab-btn" onclick="showTab('logs',this)">Logs</button>
   </div>
 
@@ -464,9 +557,9 @@ def _build_dashboard_html() -> str:
     </div>
   </div>
 
-  <!-- ══ STRATEGY LOGS TAB ══ -->
+  <!-- ══ LOGS TAB ══ -->
   <div class="tab-pane" id="tab-logs">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="two-col" style="margin-bottom:14px">
       <div>
         <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">BTC Reflections</div>
         <div id="btc-logs"><div class="empty">No BTC logs yet.</div></div>
@@ -475,6 +568,10 @@ def _build_dashboard_html() -> str:
         <div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Stock Analysis Logs</div>
         <div id="stock-logs"><div class="empty">No stock logs yet.</div></div>
       </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Full Activity Log</h2><span class="card-meta">scans · ideas · errors · reflections</span></div>
+      <div id="logs-body"><div class="empty">Loading logs...</div></div>
     </div>
   </div>
 
@@ -538,6 +635,40 @@ def _build_dashboard_html() -> str:
       <div class="card-header"><h2>Current Strategy</h2></div>
       <pre id="strategy-pre">Loading...</pre>
     </div>
+  </div>
+</div>
+
+<!-- ══ HERMES CONTROL CENTER TAB ══ -->
+<div class="tab-pane" id="tab-control">
+
+  <!-- Status row -->
+  <div class="ov-grid" style="margin-bottom:14px">
+    <div class="card">
+      <div class="card-header"><h2>Running Status</h2><span class="card-meta" id="cc-running-label">loading...</span></div>
+      <div id="cc-status-body"><div class="empty">Loading...</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h2>Trade Ideas</h2><span class="card-meta" id="cc-ideas-label"></span></div>
+      <div id="cc-ideas-stats"><div class="empty">Loading...</div></div>
+    </div>
+  </div>
+
+  <!-- Risk Manager Rules (read-only) -->
+  <div class="card">
+    <div class="card-header"><h2>🔒 Active Risk Rules</h2><span class="card-meta">hardcoded — cannot be auto-modified</span></div>
+    <div id="cc-risk-rules"><div class="empty">Loading...</div></div>
+  </div>
+
+  <!-- Agent Settings (editable) -->
+  <div class="card">
+    <div class="card-header"><h2>Agent Settings</h2><span class="card-meta">user-configurable</span></div>
+    <div id="cc-settings-body"><div class="empty">Loading...</div></div>
+  </div>
+
+  <!-- Recent Trade Ideas -->
+  <div class="card">
+    <div class="card-header"><h2>Recent Trade Ideas</h2><span class="card-meta">every setup Hermes considered</span></div>
+    <div id="cc-ideas-list"><div class="empty">No trade ideas yet.</div></div>
   </div>
 </div>
 
@@ -1044,6 +1175,185 @@ function renderStockLogs(logs) {
     </div>`).join('');
 }
 
+// ── Control Center ──────────────────────────────────────────
+let hermesStatus = {};
+
+async function fetchControlCenter() {
+  try {
+    const [status, riskRules, ideasStats, recentIdeas] = await Promise.all([
+      fetch('/hermes/status').then(r => r.json()),
+      fetch('/hermes/risk-rules').then(r => r.json()),
+      fetch('/hermes/trade-ideas/stats').then(r => r.json()),
+      fetch('/hermes/trade-ideas?limit=20').then(r => r.json()),
+    ]);
+    hermesStatus = status;
+    renderControlCenter(status, riskRules, ideasStats, recentIdeas);
+  } catch(e) { console.error('control center fetch failed', e); }
+}
+
+function renderControlCenter(status, riskRules, ideasStats, recentIdeas) {
+  // Running status
+  const s = status.status || {};
+  const runLabel = document.getElementById('cc-running-label');
+  if (runLabel) runLabel.textContent = s.running ? '● Running' : '○ Stopped';
+
+  const statusBody = document.getElementById('cc-status-body');
+  if (statusBody) statusBody.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px">
+      <div class="stat" style="padding:10px 12px"><div class="lbl">Mode</div><div class="val" style="font-size:0.9rem">${s.mode||'paper_trading'}</div></div>
+      <div class="stat" style="padding:10px 12px"><div class="lbl">BTC Loop</div><div class="val" style="font-size:0.9rem;color:${s.btc_loop_running?'#22c55e':'#ef4444'}">${s.btc_loop_running?'Running':'Stopped'}</div></div>
+      <div class="stat" style="padding:10px 12px"><div class="lbl">Stock Loop</div><div class="val" style="font-size:0.9rem;color:${s.stock_loop_running?'#22c55e':'#ef4444'}">${s.stock_loop_running?'Running':'Stopped'}</div></div>
+      <div class="stat" style="padding:10px 12px"><div class="lbl">Last Scan</div><div class="val" style="font-size:0.78rem">${fmtTs(s.last_stock_scan)||'—'}</div></div>
+      <div class="stat" style="padding:10px 12px"><div class="lbl">Next Scan</div><div class="val" style="font-size:0.78rem">${fmtTs(s.next_stock_scan)||'—'}</div></div>
+      <div class="stat" style="padding:10px 12px"><div class="lbl">Active Strategy</div><div class="val" style="font-size:0.9rem">${status.settings?.active_strategy||s.active_strategy||'v01'}</div></div>
+    </div>
+    ${(s.errors||[]).length ? `<div style="margin-top:10px;padding:8px;background:#ef444411;border:1px solid #ef444433;border-radius:8px;font-size:0.78rem;color:#ef4444">${s.errors.slice(-3).map(e=>e.error).join('<br>')}</div>` : ''}`;
+
+  // Ideas stats
+  const ideasLabel = document.getElementById('cc-ideas-label');
+  if (ideasLabel) ideasLabel.textContent = `${ideasStats.total_ideas||0} total`;
+  const ideasStatsEl = document.getElementById('cc-ideas-stats');
+  if (ideasStatsEl) {
+    const topRejections = (ideasStats.top_rejection_reasons||[]).slice(0,3).map(([r,n])=>`${r}: ${n}`).join(' · ');
+    ideasStatsEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:8px">
+        <div class="stat" style="padding:10px 12px"><div class="lbl">Total Ideas</div><div class="val">${ideasStats.total_ideas||0}</div></div>
+        <div class="stat" style="padding:10px 12px"><div class="lbl">Approved</div><div class="val pnl-positive">${ideasStats.approved||0}</div></div>
+        <div class="stat" style="padding:10px 12px"><div class="lbl">Rejected</div><div class="val pnl-negative">${ideasStats.rejected||0}</div></div>
+        <div class="stat" style="padding:10px 12px"><div class="lbl">Approval Rate</div><div class="val">${ideasStats.approval_rate_pct||0}%</div></div>
+      </div>
+      ${topRejections ? `<div style="font-size:0.75rem;color:#64748b">Top rejections: ${topRejections}</div>` : ''}`;
+  }
+
+  // Risk rules
+  const rulesEl = document.getElementById('cc-risk-rules');
+  if (rulesEl) {
+    const ruleItems = Object.entries(riskRules).filter(([k]) => k !== 'note').map(([k, v]) => {
+      const isHard = ['live_trading_enabled','allow_earnings_day_trades'].includes(k);
+      const color = v === false ? '#ef4444' : typeof v === 'boolean' && v ? '#22c55e' : '#cbd5e1';
+      return `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #0f172a;font-size:0.8rem">
+        <span style="color:#94a3b8">${k.replace(/_/g,' ')}</span>
+        <span style="color:${color};font-weight:600">${v}</span>
+      </div>`;
+    }).join('');
+    rulesEl.innerHTML = `<div>${ruleItems}</div><div style="margin-top:8px;font-size:0.72rem;color:#475569;font-style:italic">${riskRules.note||''}</div>`;
+  }
+
+  // Settings (editable)
+  const settingsEl = document.getElementById('cc-settings-body');
+  const cfg = status.settings || {};
+  if (settingsEl) settingsEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">
+      ${[
+        ['min_confidence','Min Confidence (0-100)',cfg.min_confidence||65],
+        ['min_risk_reward','Min Risk/Reward',cfg.min_risk_reward||1.5],
+        ['max_paper_trades_per_day','Max Trades/Day',cfg.max_paper_trades_per_day||5],
+        ['max_open_paper_trades','Max Open Positions',cfg.max_open_paper_trades||3],
+        ['scan_interval_seconds','Scan Interval (sec)',cfg.scan_interval_seconds||300],
+        ['max_paper_loss_per_day_pct','Max Daily Loss %',cfg.max_paper_loss_per_day_pct||3.0],
+      ].map(([key, label, val]) => `<div>
+        <div style="font-size:0.65rem;color:#475569;text-transform:uppercase;margin-bottom:4px">${label}</div>
+        <div style="display:flex;gap:6px">
+          <input id="setting-${key}" value="${val}" style="background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding:5px 8px;border-radius:6px;font-size:0.82rem;flex:1;min-width:0"/>
+          <button onclick="saveSetting('${key}')" style="background:#0AAAFF22;border:1px solid #0AAAFF44;color:#0AAAFF;padding:5px 10px;border-radius:6px;cursor:pointer;font-size:0.75rem">Save</button>
+        </div>
+      </div>`).join('')}
+    </div>`;
+
+  // Recent trade ideas
+  const ideasList = document.getElementById('cc-ideas-list');
+  if (ideasList) {
+    if (!recentIdeas.length) { ideasList.innerHTML = '<div class="empty">No trade ideas yet. Run a scan to see setups here.</div>'; }
+    else {
+      ideasList.innerHTML = [...recentIdeas].reverse().map(idea => {
+        const statusColor = idea.status === 'approved' ? '#22c55e' : idea.status === 'rejected' ? '#ef4444' : '#f59e0b';
+        const statusLabel = idea.status === 'approved' ? '✓ Approved' : idea.status === 'rejected' ? '✗ Rejected' : '◌ Watching';
+        return `<div class="log-entry" style="border-color:${statusColor}33">
+          <div class="log-header">
+            <span class="badge asset-stock">${idea.ticker}</span>
+            <span style="font-weight:700">${(idea.direction||'').toUpperCase()}</span>
+            <span class="${sigClass(idea.status==='approved'?'entry_confirmed':idea.status==='rejected'?'invalidated_setup':'watching')}">${statusLabel}</span>
+            <span style="color:#475569;font-size:0.72rem">${idea.strategy_version||'—'}</span>
+            <span style="color:#334155;font-size:0.72rem;margin-left:auto">${fmtTs(idea.created_at)}</span>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:6px;margin-bottom:6px;font-size:0.75rem">
+            <div><span style="color:#475569">Entry:</span> ${fmt(idea.entry_price)}</div>
+            <div><span style="color:#475569">Stop:</span> <span style="color:#ef4444">${fmt(idea.stop_price)}</span></div>
+            <div><span style="color:#475569">Target:</span> <span style="color:#22c55e">${fmt(idea.target_price)}</span></div>
+            <div><span style="color:#475569">R/R:</span> ${idea.risk_reward||'—'}R</div>
+            <div><span style="color:#475569">Conf:</span> ${idea.confidence||0}/100</div>
+            <div><span style="color:#475569">News:</span> <span style="color:${idea.news_risk==='high'?'#ef4444':idea.news_risk==='elevated'?'#f59e0b':'#22c55e'}">${idea.news_risk||'normal'}</span></div>
+          </div>
+          ${idea.rejection_reason ? `<div style="font-size:0.75rem;color:#ef4444;margin-bottom:4px">Blocked: ${idea.rejection_reason.replace(/_/g,' ')}</div>` : ''}
+          ${idea.chart_reason ? `<div style="font-size:0.75rem;color:#94a3b8;line-height:1.4">${idea.chart_reason}</div>` : ''}
+        </div>`;
+      }).join('');
+    }
+  }
+}
+
+async function saveSetting(key) {
+  const input = document.getElementById('setting-' + key);
+  if (!input) return;
+  const value = parseFloat(input.value) || input.value;
+  await fetch('/hermes/settings', {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({[key]: value})});
+  fetchControlCenter();
+}
+
+// ── Logs ─────────────────────────────────────────────────────
+async function fetchLogs() {
+  try {
+    const logs = await fetch('/hermes/logs').then(r => r.json());
+    renderLogs(logs);
+  } catch(e) {}
+}
+
+function renderLogs(logs) {
+  const el = document.getElementById('logs-body');
+  if (!el) return;
+
+  const errors = (logs.errors||[]).reverse().slice(0,10);
+  const ideas = (logs.recent_trade_ideas||[]).reverse().slice(0,15);
+  const reflections = (logs.recent_reflections||[]).reverse().slice(0,5);
+
+  let html = '';
+
+  if (errors.length) {
+    html += `<div style="margin-bottom:14px"><div style="font-size:0.72rem;font-weight:700;color:#ef4444;text-transform:uppercase;margin-bottom:6px">Errors</div>`;
+    errors.forEach(e => { html += `<div class="log-entry" style="border-color:#ef444433"><div class="log-header"><span class="badge" style="background:#ef444422;color:#ef4444;border:1px solid #ef444433">ERROR</span><span style="color:#334155;font-size:0.72rem;margin-left:auto">${fmtTs(e.ts)}</span></div><div class="log-reasoning">${e.error}</div></div>`; });
+    html += '</div>';
+  }
+
+  html += `<div style="margin-bottom:14px"><div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">Trade Ideas (last 15)</div>`;
+  if (!ideas.length) html += '<div class="empty">No ideas yet.</div>';
+  ideas.forEach(idea => {
+    const c = idea.status==='approved'?'#22c55e':idea.status==='rejected'?'#ef4444':'#f59e0b';
+    html += `<div class="log-entry" style="border-color:${c}33">
+      <div class="log-header">
+        <span class="badge asset-stock">${idea.ticker}</span>
+        <span style="font-weight:700;font-size:0.8rem">${idea.status?.toUpperCase()}</span>
+        <span style="font-size:0.75rem;color:#64748b">${idea.wave_count||'—'}</span>
+        <span style="color:#334155;font-size:0.72rem;margin-left:auto">${fmtTs(idea.created_at)}</span>
+      </div>
+      ${idea.rejection_reason?`<div style="font-size:0.75rem;color:#ef4444">${idea.rejection_reason.replace(/_/g,' ')}</div>`:''}
+      <div style="font-size:0.75rem;color:#94a3b8">${idea.chart_reason||''}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  html += `<div><div style="font-size:0.72rem;font-weight:700;color:#64748b;text-transform:uppercase;margin-bottom:6px">Strategy Reflections</div>`;
+  if (!reflections.length) html += '<div class="empty">No reflections yet.</div>';
+  reflections.forEach(r => {
+    html += `<div class="log-entry">
+      <div class="log-header"><span class="badge asset-btc">REFLECTION</span><span style="font-weight:700">${r.version||'—'}</span><span style="color:#64748b;font-size:0.75rem">${r.mode||'—'} mode</span><span style="color:#334155;font-size:0.72rem;margin-left:auto">${fmtTs(r.ts)}</span></div>
+      <div class="log-reasoning">${r.rationale||r.verdict||'—'}</div>
+    </div>`;
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
 // ── Strategy selector ────────────────────────────────────────
 let strategyData = [];
 let perfData = {};
@@ -1215,7 +1525,7 @@ async function fetchAll() {
 }
 
 async function fetchAllData() {
-  await Promise.all([fetchAll(), fetchStocks(), fetchStockLogs(), fetchStrategies()]);
+  await Promise.all([fetchAll(), fetchStocks(), fetchStockLogs(), fetchStrategies(), fetchControlCenter(), fetchLogs()]);
 }
 
 // Refresh every 5s

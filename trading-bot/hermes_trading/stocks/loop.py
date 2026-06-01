@@ -20,6 +20,10 @@ from hermes_trading.stocks.watchlist import (
     POSITION_IN_TRADE, POSITION_EXITED, POSITION_WATCHING, POSITION_NO_POS,
     SIGNAL_ENTRY, SIGNAL_INVALIDATED, SIGNAL_EXIT
 )
+from hermes_trading.agents import risk_manager, news_agent, evaluator
+from hermes_trading.trade_ideas import TradeIdea, append_idea, STATUS_APPROVED, STATUS_REJECTED, STATUS_WATCHING
+from hermes_trading import agent_state
+from hermes_trading import strategy_registry
 
 log = logging.getLogger(__name__)
 
@@ -75,16 +79,26 @@ async def _fetch_stock_safe(ticker: str) -> dict | None:
 
 async def run_stock_loop() -> None:
     log.info("Stock trading loop started.")
+    agent_state.mark_running()
     goals = _load_stock_goals()
     max_positions = goals.get("max_open_positions", MAX_OPEN_POSITIONS)
-    max_risk = goals.get("max_risk_per_trade_pct", MAX_RISK_PER_TRADE_PCT)
     stop_loss_pct = goals.get("default_stop_loss_pct", DEFAULT_STOP_LOSS_PCT)
+    active_strategy = strategy_registry.get_active_strategy_name()
+    news_api_key = os.getenv("NEWS_API_KEY", "")
+
+    # Daily/weekly loss tracking (simple in-memory for paper trading)
+    daily_pnl_pct = 0.0
+    weekly_pnl_pct = 0.0
 
     while True:
         tick_start = datetime.now(timezone.utc)
         try:
             stocks = load_watchlist()
-            open_count = _count_open_positions(stocks)
+            active_strategy = strategy_registry.get_active_strategy_name()
+            open_positions = [s.ticker for s in stocks if s.position_status == POSITION_IN_TRADE]
+            open_count = len(open_positions)
+
+            agent_state.mark_stock_scan([s.ticker for s in stocks])
 
             for stock in stocks:
                 try:
@@ -95,24 +109,38 @@ async def run_stock_loop() -> None:
                     price = market["price"]
                     change_pct = market.get("daily_change_pct") or 0.0
 
-                    # Update price on watchlist entry
                     stock.current_price = price
                     stock.daily_change_pct = change_pct
                     stock.last_updated = tick_start.isoformat()
 
-                    # Run Elliott Wave analysis regardless of trading toggle
+                    # 1. Elliott Wave analysis (always runs)
                     analysis = wave_strategy.analyze(stock.ticker, market, stop_loss_pct)
 
-                    # Get Claude interpretation (uses Haiku, cheap)
+                    # 2. News agent (per-ticker)
+                    news = await news_agent.analyze(stock.ticker, news_api_key)
+                    has_earnings = news_agent.is_earnings_day(stock.ticker)
+
+                    # 3. Evaluator — score the setup
+                    setup = evaluator.evaluate(
+                        ticker=stock.ticker,
+                        wave_analysis=analysis,
+                        news=news,
+                        current_price=price,
+                        strategy_version=active_strategy,
+                        stop_loss_pct=stop_loss_pct,
+                        has_earnings=has_earnings,
+                    )
+
+                    # 4. Claude interpretation
                     claude_notes = stock_reflect.reinterpret_with_claude(stock, analysis, market.get("closes_1d", []))
 
-                    # Update stock with analysis results
+                    # Update watchlist entry with analysis
                     stock.signal = analysis.signal
-                    stock.confidence_score = analysis.confidence
+                    stock.confidence_score = setup.confidence
                     stock.wave_count = analysis.wave_count
                     stock.fib_zone = analysis.fib_zone
                     stock.trend = analysis.trend
-                    stock.risk_reward = analysis.risk_reward
+                    stock.risk_reward = str(setup.risk_reward)
                     stock.hermes_notes = claude_notes
 
                     # --- Manage existing position ---
@@ -165,24 +193,76 @@ async def run_stock_loop() -> None:
                             open_count -= 1
 
                     # --- Consider new entry ---
-                    elif (stock.trading_enabled
-                          and stock.position_status != POSITION_IN_TRADE
-                          and analysis.signal == SIGNAL_ENTRY
-                          and analysis.confidence >= 65
-                          and open_count < max_positions):
+                    elif stock.position_status != POSITION_IN_TRADE:
 
-                        stop_price = price * (1 - stop_loss_pct / 100)
-                        target_price = analysis.swing_high if analysis.swing_high else price * 1.04
+                        # Log every setup as a trade idea regardless of outcome
+                        idea_status = STATUS_WATCHING
+                        rejection_reason = ""
+                        rm_decision = None
 
-                        stock.position_status = POSITION_IN_TRADE
-                        stock.entry_price = price
-                        stock.stop_loss_price = stop_price
-                        stock.take_profit_price = target_price
-                        open_count += 1
-                        log.info(f"Stock {stock.ticker} entry @ ${price:.2f} | stop=${stop_price:.2f} | target=${target_price:.2f}")
+                        if setup.tradeable and stock.trading_enabled:
+                            # 5. Risk Manager — final veto
+                            rm_decision = risk_manager.evaluate(
+                                ticker=stock.ticker,
+                                direction=setup.direction,
+                                entry_price=setup.entry_price,
+                                stop_price=setup.stop_price,
+                                target_price=setup.target_price,
+                                confidence=setup.confidence,
+                                open_positions=open_positions,
+                                daily_pnl_pct=daily_pnl_pct,
+                                weekly_pnl_pct=weekly_pnl_pct,
+                                news_risk=setup.news_risk,
+                                has_earnings_today=setup.has_earnings_today,
+                            )
+
+                            if rm_decision.approved:
+                                idea_status = STATUS_APPROVED
+                                stock.position_status = POSITION_IN_TRADE
+                                stock.entry_price = setup.entry_price
+                                stock.stop_loss_price = setup.stop_price
+                                stock.take_profit_price = setup.target_price
+                                open_positions.append(stock.ticker)
+                                open_count += 1
+                                log.info(f"Stock {stock.ticker} APPROVED @ ${price:.2f} | stop=${setup.stop_price:.2f} | target=${setup.target_price:.2f} | confidence={setup.confidence}")
+                            else:
+                                idea_status = STATUS_REJECTED
+                                rejection_reason = rm_decision.reason
+                                log.info(f"Stock {stock.ticker} BLOCKED by Risk Manager: {rm_decision.reason}")
+                        elif not setup.tradeable:
+                            idea_status = STATUS_REJECTED
+                            rejection_reason = setup.not_tradeable_reason
+                        elif not stock.trading_enabled:
+                            idea_status = STATUS_WATCHING
+                            rejection_reason = "trading_disabled_for_ticker"
+
+                        # Log the trade idea with full context
+                        append_idea(TradeIdea(
+                            ticker=stock.ticker,
+                            asset_type="stock",
+                            direction=setup.direction,
+                            entry_price=setup.entry_price,
+                            stop_price=setup.stop_price,
+                            target_price=setup.target_price,
+                            risk_pct=rm_decision.risk_pct if rm_decision else None,
+                            risk_reward=setup.risk_reward,
+                            confidence=setup.confidence,
+                            strategy_version=active_strategy,
+                            chart_reason=setup.chart_reason,
+                            wave_count=setup.wave_count,
+                            fib_zone=setup.fib_zone,
+                            trend=setup.trend,
+                            news_summary=setup.news_summary,
+                            news_risk=setup.news_risk,
+                            status=idea_status,
+                            rejection_reason=rejection_reason,
+                            risk_checks_passed=rm_decision.checks_passed if rm_decision else [],
+                            risk_checks_failed=rm_decision.checks_failed if rm_decision else [],
+                            similar_past_setups="",
+                            hermes_notes=claude_notes,
+                        ))
 
                     elif stock.position_status == POSITION_EXITED:
-                        # Reset to watching after 1 cycle
                         stock.position_status = POSITION_WATCHING
 
                     # Log analysis to hypotheses file
