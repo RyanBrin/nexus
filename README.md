@@ -1,44 +1,98 @@
 # Nexus
 
-> Your personal command center.
+> A self-built personal command center — autonomous trading, banking, mobile, and schedule automation.
 
-A self-built personal dashboard ecosystem — trading bot, finance dashboard, Android app, and schedule sync. Everything connected in one place.
+[![Trading Bot](https://img.shields.io/badge/Hermes-live-22c55e?style=flat-square)](https://hermes-trading-production-c312.up.railway.app)
+[![Banking API](https://img.shields.io/badge/Nexus%20API-live-22c55e?style=flat-square)](https://dashboard-api-production-ebee.up.railway.app)
+
+---
+
+## What is Nexus?
+
+Nexus is a personal ecosystem of interconnected tools I built to manage trading, finances, work schedule, and daily life from one place. Every component is production-deployed and actively running.
 
 ---
 
 ## Projects
 
+### 🤖 [`trading-bot/`](./trading-bot) — Hermes Trading Bot
+**Autonomous paper trading agent running 24/7 on Railway.**
+
+- **Strategy:** Elliott Wave + Fibonacci retracement analysis on 30 stocks and BTC/USD (Kraken)
+- **Setup types:** `retracement_entry` (price in 38.2–61.8% fib zone), `breakout_continuation` (price above swing high)
+- **Risk firewall:** Hardcoded safety limits that cannot be modified by AI — min R/R, confidence, stop size, position limits
+- **AI layer:** Claude Haiku writes natural-language analysis per stock scan; Claude Sonnet reflects on strategy in batches
+- **Analytics:** Rejection reason tracking, setup-type performance, expectancy calculation, phase gate system
+- **Dashboard:** 8-tab real-time web UI with Hermes Analysis Chart (custom fib overlays), TradingView integration, trade idea browser
+- **Persistence:** Supabase Postgres as canonical source of truth — survives container restarts
+- **Goal:** 100 paper trades → prove positive expectancy → advance to live trading
+
+**Live:** [hermes-trading-production-c312.up.railway.app](https://hermes-trading-production-c312.up.railway.app)
+
+---
+
 ### 📱 [`android/`](./android) — Nexus Android App
-Personal dashboard app for tracking everything in one place.
-- Calendar, work shifts (Pebble Creek + Best Buy), budget with editable spending caps + donut chart
-- **Trading screen** — live BTC paper trading data, open trade card, cumulative PnL chart
-- Bank integration via Plaid (balances, transactions, Fidelity brokerage holdings)
-- Push notifications 1 hour before events and shifts
-- Settings screen — API keys stored in EncryptedSharedPreferences
+**Personal command-center Android app.**
+
+- Calendar with push notification reminders
+- Work shift tracking for two jobs (Pebble Creek + Best Buy) with auto-sync via Work Schedule Sync
+- Budget tracking with expense categories and credit card progress bars
+- Banking tab → live bank/investment data via Nexus API (Plaid)
+- Trading tab → live BTC paper trades, PnL, and strategy status from Hermes
 - Built with Kotlin + Jetpack Compose + Room + Material 3
 
-### 🤖 [`trading-bot/`](./trading-bot) — Hermes Trading Bot
-Self-improving BTC/USDT paper trading agent running 24/7 on Railway.
-- **Strategy:** 15-minute RSI — enter LONG when RSI < 35, take profit when RSI > 55, stop loss at 1%
-- TradingView webhook support for external signals
-- Every trade logged to Supabase — survives container restarts
-- After every 5 closed trades, Claude AI reflects and evolves exactly one strategy variable
-- **Goal:** +5%/month (+60%/year) with max 8% drawdown
-- Live dashboard: [hermes-trading-production-c312.up.railway.app](https://hermes-trading-production-c312.up.railway.app)
-- Built with Python + FastAPI + ccxt (Kraken) + Anthropic SDK
+---
 
-### 🏦 [`api/`](./api) — Dashboard API
-Personal backend API handling bank and investment data.
-- Plaid integration — live balances, transaction history (30 days), Fidelity brokerage holdings
-- Web dashboard: [dashboard-api-production-ebee.up.railway.app](https://dashboard-api-production-ebee.up.railway.app)
-- Built with Python + FastAPI + Plaid SDK + Supabase
+### 🏦 [`api/`](./api) — Nexus API
+**Personal backend for banking and investment data.**
+
+- Plaid integration: bank account linking, live balances, transaction history, Fidelity holdings
+- Stores Plaid access tokens in Supabase (server-side — no credentials on device)
+- Web banking dashboard at the live URL
+- Intentionally thin service — clean API surface over Plaid SDK
+
+**Live:** [dashboard-api-production-ebee.up.railway.app](https://dashboard-api-production-ebee.up.railway.app)
+
+---
 
 ### 📅 [`schedule-sync/`](./schedule-sync) — Work Schedule Sync
-Google Apps Script that auto-syncs work schedules to Google Calendar.
-- Pebble Creek Golf Course: auto-detects closing (2:30–9:30pm), opening (6:30am–2:30pm), float (10am–6pm) shifts
-- Best Buy: parses schedule screenshots via Claude Haiku OCR — handles any format automatically
-- Tracks processed files so screenshots are never parsed twice
-- API key stored in Apps Script Script Properties (never in code)
+**Google Apps Script that syncs two work schedules into Google Calendar automatically.**
+
+- **Pebble Creek:** Reads shared calendar feed, auto-detects shift type from event title
+- **Best Buy:** Claude Haiku OCR reads schedule screenshots from Google Drive — drop a screenshot, it processes automatically
+- Deduplication via `PropertiesService` — never parses the same file twice
+- Email summary after each sync run
+
+---
+
+## Architecture
+
+```
+Nexus Ecosystem
+│
+├── hermes-trading    (Railway)   ← BTC + stock trading, web dashboard
+├── dashboard-api     (Railway)   ← Plaid banking backend
+├── dashboard-app     (Android)   ← Mobile command center
+└── work-schedule-sync (Apps Script) ← Calendar automation
+         │
+         └── All services talk through REST APIs
+             Data persisted in Supabase Postgres
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Trading bot | Python · FastAPI · ccxt (Kraken) · yfinance · asyncpg |
+| AI | Anthropic SDK — Claude Haiku (analysis) · Claude Sonnet (reflection) |
+| Charts | TradingView Lightweight Charts + TradingView embed |
+| Android | Kotlin · Jetpack Compose · Room · Retrofit · WorkManager |
+| API backend | Python · FastAPI · Plaid SDK |
+| Database | Supabase Postgres |
+| Deployment | Railway (auto-deploy on push) |
+| Automation | Google Apps Script |
 
 ---
 
@@ -48,36 +102,10 @@ Google Apps Script that auto-syncs work schedules to Google Calendar.
 |---|---|
 | Name | Nexus |
 | Tagline | Your personal command center |
-| Primary | `#0AAAFF` |
+| Primary | `#0AAAFF` (Nexus Blue) |
 | Background | `#080F1A` |
-| Accent | `#8B5CF6` |
-
----
-
-## Tech Stack
-
-| Layer | Tech |
-|---|---|
-| Android | Kotlin, Jetpack Compose, Room, Retrofit, WorkManager, Plaid Link SDK |
-| Trading Bot | Python, FastAPI, ccxt (Kraken), asyncpg, Anthropic SDK |
-| API Backend | Python, FastAPI, Plaid SDK, asyncpg |
-| Database | Supabase (Postgres) — trades, heartbeat, hypotheses, Plaid tokens |
-| Infra | Railway (auto-deploy on push to GitHub) |
-| AI | Claude claude-sonnet-4-6 (strategy reflection), Claude Haiku (schedule OCR) |
-
----
-
-## Architecture
-
-```
-nexus/
-├── android/          # Kotlin Android app (Nexus)
-├── trading-bot/      # Python BTC trading agent — Railway
-├── api/              # Python personal API — Railway  
-└── schedule-sync/    # Google Apps Script
-```
-
-Both Railway services auto-deploy on every push to `main` in their individual repos.
+| Accent | `#8B5CF6` (Nexus Purple) |
+| Success | `#22C55E` |
 
 ---
 
