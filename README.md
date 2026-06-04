@@ -2,8 +2,8 @@
 
 > A self-built personal command center — autonomous trading, banking, mobile, and schedule automation.
 
-[![Trading Bot](https://img.shields.io/badge/Hermes-live-22c55e?style=flat-square)](https://hermes-trading-production-c312.up.railway.app)
-[![Banking API](https://img.shields.io/badge/Nexus%20API-live-22c55e?style=flat-square)](https://dashboard-api-production-ebee.up.railway.app)
+![Trading Bot](https://img.shields.io/badge/Hermes-live-22c55e?style=flat-square)
+![Banking API](https://img.shields.io/badge/Nexus%20API-live-22c55e?style=flat-square)
 
 ---
 
@@ -27,7 +27,7 @@ Nexus is a personal ecosystem of interconnected tools I built to manage trading,
 - **Persistence:** Supabase Postgres as canonical source of truth — survives container restarts
 - **Goal:** 100 paper trades → prove positive expectancy → advance to live trading
 
-**Live:** [hermes-trading-production-c312.up.railway.app](https://hermes-trading-production-c312.up.railway.app)
+**Live:** [private]
 
 ---
 
@@ -51,7 +51,7 @@ Nexus is a personal ecosystem of interconnected tools I built to manage trading,
 - Web banking dashboard at the live URL
 - Intentionally thin service — clean API surface over Plaid SDK
 
-**Live:** [dashboard-api-production-ebee.up.railway.app](https://dashboard-api-production-ebee.up.railway.app)
+**Live:** [private]
 
 ---
 

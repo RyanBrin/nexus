@@ -61,7 +61,7 @@ hermes_trading/
 ## Goal
 > Phase 1: Paper trade 100 trades minimum. Pass: positive expectancy, PF > 1.3, max DD < 10%, every trade has stop + reason.
 
-**Live:** [hermes-trading-production-c312.up.railway.app](https://hermes-trading-production-c312.up.railway.app)
+**Live:** [private]
 
 ## Tech
 Python · FastAPI · ccxt (Kraken) · yfinance · Anthropic SDK · Supabase · Railway
